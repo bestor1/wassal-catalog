@@ -41,8 +41,8 @@
     <!-- Babel 6 (LA seule version qui empêche l'erreur 'Unexpected token ?' sur Windows 7) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/6.26.0/babel.min.js"></script>
     
-    <!-- SQL.js (SQLite dans le navigateur) -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-wasm.js"></script>
+    <!-- SQL.js (Version ASM.js 100% compatible avec les anciens navigateurs sans WebAssembly) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-asm.js"></script>
     
     <!-- Google Identity Services -->
     <script src="https://accounts.google.com/gsi/client" async defer></script>
@@ -71,6 +71,11 @@
 
         const GOOGLE_CLIENT_ID = "807679772275-56vf7kfl75jjeujht8vu7pgmja5evd5r.apps.googleusercontent.com"; 
 
+        const DEFAULT_CONFIG = {
+            prodTable: '', nameCol: '', priceCol: '', stockMode: 'inline',
+            inlineStockCol: '', stockTable: '', stockQtyCol: '', stockProdIdCol: '', prodIdCol: ''
+        };
+
         function App() {
             const [view, setView] = useState('login'); // login, loading, catalog, explorer
             const [loadingMessage, setLoadingMessage] = useState('');
@@ -80,13 +85,43 @@
             const [dbInfo, setDbInfo] = useState({ date: null, name: '' });
             const [hideEmptyStock, setHideEmptyStock] = useState(false);
             
-            // --- ÉTATS POUR L'EXPLORATEUR DE BASE DE DONNÉES ---
             const [dbBuffer, setDbBuffer] = useState(null);
             const [explorerTables, setExplorerTables] = useState([]);
             const [selectedTable, setSelectedTable] = useState('');
             const [tableData, setTableData] = useState({ cols: [], rows: [] });
 
+            // On utilise v2 pour forcer l'application à oublier son ancien mauvais réglage
+            const [config, setConfig] = useState(() => {
+                let res = {};
+                for (let k in DEFAULT_CONFIG) res[k] = DEFAULT_CONFIG[k];
+                try { 
+                    const saved = localStorage.getItem('wassal_config_v2'); 
+                    if (saved) {
+                        const parsed = JSON.parse(saved);
+                        for (let k in parsed) res[k] = parsed[k];
+                    }
+                } catch(e) {}
+                return res;
+            });
+
+            const updateConfig = (newValues) => {
+                setConfig(prev => {
+                    let updated = {};
+                    for (let k in prev) updated[k] = prev[k];
+                    for (let k in newValues) updated[k] = newValues[k];
+                    return updated;
+                });
+            };
+
+            const saveConfigToStorage = (cfg) => {
+                try { localStorage.setItem('wassal_config_v2', JSON.stringify(cfg)); } catch(e) {}
+            };
+
             const initSqlJsReady = useMemo(function() {
+                if (typeof window.initSqlJs !== 'function') {
+                    console.error("SQL.js n'a pas pu se charger.");
+                    return Promise.reject(new Error("Le lecteur de base de données est incompatible avec ce navigateur."));
+                }
                 return window.initSqlJs({
                     locateFile: function(file) { return "https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/" + file; }
                 });
@@ -159,7 +194,6 @@
                         cols = colRes[0].values.map(function(r) { return r[1]; });
                     }
                     
-                    // On charge les 50 premières lignes pour analyser
                     const dataRes = db.exec('SELECT * FROM "' + tableName + '" LIMIT 50');
                     let rows = [];
                     if (dataRes.length > 0) {
@@ -173,92 +207,112 @@
                 }
             };
 
+            // LE NOUVEAU CERVEAU CALIBRÉ SUR VOTRE CAPTURE D'ÉCRAN
+            const autoDetectConfig = function(sch) {
+                const tables = Object.keys(sch);
+                if (tables.length === 0) return null;
+                
+                const prodTable = tables.find(function(t) { return t.toLowerCase() === 'product' || t.toLowerCase() === 'article'; }) || tables[0];
+                const pCols = sch[prodTable] || [];
+
+                const findCol = function(cols, exactList, partialList) {
+                    if (!cols) return '';
+                    // 1. Cherche une correspondance exacte d'abord
+                    var match = cols.find(function(c) { return exactList.indexOf(c.toLowerCase()) !== -1; });
+                    if (match) return match;
+                    // 2. Sinon cherche une partie du mot
+                    match = cols.find(function(c) {
+                        return partialList.some(function(p) { return c.toLowerCase().indexOf(p) !== -1; });
+                    });
+                    return match || cols[0] || '';
+                };
+
+                // Calibrage exact selon votre capture d'écran !
+                const nameCol = findCol(pCols, ['name', 'nom'], ['name', 'nom', 'desig']);
+                const priceCol = findCol(pCols, ['sell_price', 'prix_vente'], ['sell', 'vente', 'price', 'prix']); // Priorité à "sell_price" pour ignorer "buy_price"
+                const inlineStockCol = findCol(pCols, ['stock', 'quantity', 'qte'], ['stock', 'quant']); // Priorité directe à "stock"
+                const prodIdCol = findCol(pCols, ['id', 'product_id'], ['id']);
+
+                return { 
+                    prodTable: prodTable, 
+                    nameCol: nameCol, 
+                    priceCol: priceCol, 
+                    stockMode: 'inline', 
+                    inlineStockCol: inlineStockCol, 
+                    stockTable: '', 
+                    stockQtyCol: '', 
+                    stockProdIdCol: '', 
+                    prodIdCol: prodIdCol 
+                };
+            };
+
+            const executeConfigQuery = function(db, cfg) {
+                if (!cfg || !cfg.prodTable) throw new Error("Configuration manquante.");
+                
+                let q = "";
+                if (cfg.stockMode === 'inline') {
+                    q = 'SELECT "' + cfg.nameCol + '", "' + cfg.priceCol + '", IFNULL("' + cfg.inlineStockCol + '", 0) FROM "' + cfg.prodTable + '" LIMIT 3000';
+                } else {
+                    q = 'SELECT p."' + cfg.nameCol + '", p."' + cfg.priceCol + '", SUM(IFNULL(s."' + cfg.stockQtyCol + '", 0)) FROM "' + cfg.prodTable + '" p LEFT JOIN "' + cfg.stockTable + '" s ON p."' + cfg.prodIdCol + '" = s."' + cfg.stockProdIdCol + '" GROUP BY p."' + cfg.prodIdCol + '" LIMIT 3000';
+                }
+                const res = db.exec(q);
+                if (res.length > 0) {
+                    return res[0].values.map(function(row) {
+                        return {
+                            nom: row[0] || "Produit sans nom",
+                            prix: row[1] || 0,
+                            quantite: Math.round(row[2] || 0)
+                        };
+                    });
+                }
+                throw new Error("Aucun produit retourné par cette requête.");
+            };
+
             const parseDatabase = async function(arrayBuffer) {
-                setLoadingMessage("Analyse de la base Wassal...");
-                setDbBuffer(arrayBuffer); // Sauvegarde pour l'explorateur
+                setLoadingMessage("Analyse des produits (Recherche de 'stock' et 'sell_price')...");
+                setDbBuffer(arrayBuffer); 
                 
                 try {
                     const SQL = await initSqlJsReady;
                     const db = new SQL.Database(new Uint8Array(arrayBuffer));
                     
-                    // 1. Récupération de toutes les tables pour l'Explorateur
+                    const currentSchema = {};
                     let allTables = [];
                     try {
                         const tablesInfo = db.exec("SELECT name FROM sqlite_master WHERE type='table'");
                         if (tablesInfo.length > 0) {
                             allTables = tablesInfo[0].values.map(function(r) { return r[0]; });
                             setExplorerTables(allTables);
+                            allTables.forEach(function(t) {
+                                const colRes = db.exec('PRAGMA table_info("' + t + '")');
+                                if (colRes.length > 0) {
+                                    currentSchema[t] = colRes[0].values.map(function(r) { return r[1]; });
+                                }
+                            });
                         }
                     } catch(e) { console.warn(e); }
 
-                    // 2. Tentative de lecture classique
-                    let prodCols = [];
-                    let stockCols = [];
-                    try {
-                        const pInfo = db.exec("PRAGMA table_info(Product)");
-                        if (pInfo.length > 0) prodCols = pInfo[0].values.map(function(row) { return row[1]; });
-                        
-                        const sInfo = db.exec("PRAGMA table_info(Stock)");
-                        if (sInfo.length > 0) stockCols = sInfo[0].values.map(function(row) { return row[1]; });
-                    } catch(e) { }
-
-                    const findCol = function(cols, exactList, partialList) {
-                        let found = cols.find(function(c) { return exactList.indexOf(c.toLowerCase()) !== -1; });
-                        if (found) return found;
-                        if (partialList) {
-                            found = cols.find(function(c) { 
-                                const l = c.toLowerCase();
-                                return partialList.some(function(p) { return l.indexOf(p) !== -1; });
-                            });
-                        }
-                        return found;
-                    };
-
-                    const nameCol = findCol(prodCols, ['name', 'nom', 'designation'], ['nom', 'desig']);
-                    const priceCol = findCol(prodCols, ['unit_price_1', 'price', 'prix'], ['prix', 'price']);
-                    const prodIdCol = findCol(prodCols, ['id', '_id', 'product_id'], ['id']);
-
-                    const inlineStockCol = findCol(prodCols, ['current_stock', 'quantity', 'quantite', 'stock'], ['stock', 'qte']);
-                    const stockQtyCol = findCol(stockCols, ['current_stock', 'quantity', 'quantite', 'stock'], ['stock', 'qte']);
-                    const stockProdIdCol = findCol(stockCols, ['id_product', 'product_id'], ['prod', 'id']);
-
-                    let finalRes = null;
-
-                    if (nameCol && priceCol) {
-                        const evaluateQuery = function(q) {
-                            try {
-                                const r = db.exec(q);
-                                if (r.length > 0) finalRes = r;
-                            } catch(e) { }
-                        };
-
-                        if (inlineStockCol) {
-                            evaluateQuery('SELECT "' + nameCol + '", "' + priceCol + '", "' + inlineStockCol + '" FROM Product LIMIT 3000');
-                        } else if (stockCols.length > 0 && stockQtyCol && stockProdIdCol && prodIdCol) {
-                            evaluateQuery('SELECT p."' + nameCol + '", p."' + priceCol + '", SUM(IFNULL(s."' + stockQtyCol + '", 0)) FROM Product p LEFT JOIN Stock s ON p."' + prodIdCol + '" = s."' + stockProdIdCol + '" GROUP BY p."' + prodIdCol + '" LIMIT 3000');
-                        } else {
-                            evaluateQuery('SELECT "' + nameCol + '", "' + priceCol + '", 1 FROM Product LIMIT 3000');
-                        }
+                    let activeConfig = config;
+                    if (!activeConfig || !activeConfig.prodTable || activeConfig.prodTable === '') {
+                        activeConfig = autoDetectConfig(currentSchema) || DEFAULT_CONFIG;
                     }
 
-                    let parsedProducts = [];
-                    if (finalRes && finalRes.length > 0) {
-                        parsedProducts = finalRes[0].values.map(function(row) {
-                            return {
-                                nom: row[0] || "Produit",
-                                prix: row[1] || 0,
-                                quantite: Math.round(row[2] || 0) 
-                            };
-                        });
+                    try {
+                        const parsed = executeConfigQuery(db, activeConfig);
+                        setProducts(parsed);
+                        setConfig(activeConfig);
+                        saveConfigToStorage(activeConfig);
+                        setView('catalog');
+                    } catch (e) {
+                        console.warn("Échec requête automatique :", e);
+                        setError("L'auto-détection a échoué. Veuillez explorer la base.");
+                        setView('explorer'); 
                     }
 
                     db.close();
-                    setProducts(parsedProducts);
-                    setView('catalog');
-
                 } catch (err) {
                     console.error(err);
-                    setError(err.message);
+                    setError("Erreur d'analyse : " + err.message);
                     setView('login');
                 }
             };
@@ -270,11 +324,10 @@
                 try {
                     const SQL = await initSqlJsReady;
                     const db = new SQL.Database();
-                    db.run("CREATE TABLE Product (id INTEGER PRIMARY KEY, name TEXT, unit_price_1 REAL, current_stock INTEGER, actif INTEGER);");
-                    db.run("INSERT INTO Product VALUES (1, 'Cafe Torrefie 250g', 350.00, 150, 1);");
-                    db.run("INSERT INTO Product VALUES (2, 'Lait Entier 1L', 110.00, 500, 1);");
-                    db.run("INSERT INTO Product VALUES (3, 'Biscuits Chocolat x12', 120.00, 0, 1);");
-                    db.run("INSERT INTO Product VALUES (4, 'Jus d''Orange 2L', 220.00, 40, 1);");
+                    db.run("CREATE TABLE Product (id INTEGER PRIMARY KEY, name TEXT, sell_price REAL, stock INTEGER, actif INTEGER);");
+                    db.run("INSERT INTO Product VALUES (1, 'Jus d''orange', 140.00, 0, 1);");
+                    db.run("INSERT INTO Product VALUES (2, 'Bimo Double Mix', 120.00, 21, 1);");
+                    db.run("INSERT INTO Product VALUES (3, 'Bimo Gaufrette', 130.00, 50, 1);");
                     const binaryArray = db.export();
                     db.close();
                     setDbInfo({ name: 'demo.db', date: new Date().toLocaleString('fr-FR') });
@@ -335,9 +388,6 @@
                 );
             }
 
-            // =================================================================
-            // L'OUTIL ULTIME : L'EXPLORATEUR DE BASE DE DONNÉES WASSAL
-            // =================================================================
             if (view === 'explorer') {
                 return (
                     <div className="flex flex-col h-screen bg-gray-900 text-green-400 p-4 font-mono overflow-hidden z-50 absolute inset-0">
@@ -347,7 +397,7 @@
                         </div>
                         
                         <p className="text-xs text-gray-400 mb-4 flex-shrink-0">
-                            Sélectionnez une table ci-dessous pour voir directement comment vos données sont stockées. Cherchez la table des produits (souvent "Product", "Article" ou "Item").
+                            Voici l'intérieur de la base. Si le catalogue ne s'affiche pas bien, repérez les colonnes de nom, prix et quantité.
                         </p>
 
                         <div className="mb-4 flex-shrink-0">
@@ -361,7 +411,7 @@
                                     loadExplorerTable(t, dbBuffer);
                                 }}
                             >
-                                <option value="">-- Sélectionner une table --</option>
+                                <option value="">-- Sélectionner --</option>
                                 {explorerTables.map(function(t) { return <option key={t} value={t}>{t}</option>; })}
                             </select>
                         </div>
@@ -408,7 +458,6 @@
                                     </p>
                                 </div>
                                 <div className="flex gap-2">
-                                    {/* Le bouton pour ouvrir l'Explorateur de Base de données */}
                                     <button 
                                         onClick={function() { setView('explorer'); }}
                                         className="bg-blue-800 hover:bg-gray-800 p-2 rounded-full text-sm transition-colors text-yellow-300 shadow-inner flex items-center justify-center w-8 h-8"
@@ -452,8 +501,8 @@
                         <div className="flex-1 overflow-y-auto p-4 space-y-3 pb-24">
                             {filteredProducts.length === 0 ? (
                                 <div className="text-center mt-10">
-                                    <p className="text-gray-500 mb-4">Aucun produit trouvé en stock.</p>
-                                    <p className="text-sm text-gray-400">Cliquez sur l'icône <i className="fa-solid fa-bug text-yellow-500 mx-1"></i> en haut à droite<br/>pour trouver vos quantités.</p>
+                                    <p className="text-gray-500 mb-4">Aucun produit trouvé.</p>
+                                    <p className="text-sm text-gray-400">Cliquez sur l'icône <i className="fa-solid fa-bug text-yellow-500 mx-1"></i> en haut à droite pour inspecter.</p>
                                 </div>
                             ) : (
                                 filteredProducts.map(function(p, index) {
@@ -462,7 +511,7 @@
                                             <div>
                                                 <h2 className="font-bold text-gray-800 text-lg">{p.nom}</h2>
                                                 <p className="text-sm text-gray-500 mt-1">
-                                                    Stock: <span className={p.quantite > 0 ? "text-green-600 font-medium" : "text-red-500 font-medium"}>
+                                                    Stock: <span className={p.quantite > 0 ? "text-green-600 font-bold" : "text-red-500 font-bold"}>
                                                         {p.quantite > 0 ? p.quantite + " dispo." : "Rupture"}
                                                     </span>
                                                 </p>
@@ -504,7 +553,7 @@
                     </div>
                     <h1 className="text-3xl font-extrabold text-gray-900 mb-2">Wassal Catalog</h1>
                     <p className="text-center text-gray-500 mb-8">
-                        Connectez votre compte Google pour extraire automatiquement le catalogue.
+                        Connectez votre compte Google pour extraire automatiquement le catalogue depuis votre base de données.
                     </p>
 
                     {error && (
@@ -540,7 +589,6 @@
 
         const rootElement = document.getElementById('root');
         if (typeof ReactDOM !== 'undefined') {
-            // Utilisation sécurisée de createRoot (compatible React 18)
             if (ReactDOM.createRoot) {
                 const root = ReactDOM.createRoot(rootElement);
                 root.render(<App />);
