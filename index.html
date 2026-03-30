@@ -4,8 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Wassal Catalog - Partage de stock</title>
+    
+    <!-- PWA / Fichiers d'installation -->
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#2563eb">
+    
     <!-- Polyfills absolus pour réparer les anciens navigateurs (Windows 7 / IE11) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-polyfill/6.26.0/polyfill.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/whatwg-fetch/3.6.19/fetch.min.js"></script>
@@ -86,6 +89,35 @@
             const [dbInfo, setDbInfo] = useState({ date: null, name: '' });
             const [hideEmptyStock, setHideEmptyStock] = useState(false);
             
+            // --- ÉTATS POUR L'INSTALLATION (PWA) ---
+            const [deferredPrompt, setDeferredPrompt] = useState(null);
+            const [isInstallable, setIsInstallable] = useState(false);
+
+            useEffect(function() {
+                const handler = function(e) {
+                    // Empêche Chrome d'afficher sa petite barre par défaut
+                    e.preventDefault();
+                    // Sauvegarde l'événement pour notre propre bouton
+                    setDeferredPrompt(e);
+                    // Affiche le gros bouton vert
+                    setIsInstallable(true);
+                };
+                window.addEventListener('beforeinstallprompt', handler);
+                return function() { window.removeEventListener('beforeinstallprompt', handler); };
+            }, []);
+
+            const handleInstallClick = async function() {
+                if (!deferredPrompt) return;
+                // Affiche la vraie boîte de dialogue d'installation du téléphone
+                deferredPrompt.prompt();
+                const choiceResult = await deferredPrompt.userChoice;
+                if (choiceResult.outcome === 'accepted') {
+                    console.log('Application installée');
+                }
+                setDeferredPrompt(null);
+                setIsInstallable(false);
+            };
+
             const [dbBuffer, setDbBuffer] = useState(null);
             const [explorerTables, setExplorerTables] = useState([]);
             const [selectedTable, setSelectedTable] = useState('');
@@ -579,6 +611,17 @@
                         Synchroniser via Google Drive
                     </button>
 
+                    {/* --- LE NOUVEAU BOUTON D'INSTALLATION --- */}
+                    {isInstallable && (
+                        <button 
+                            onClick={handleInstallClick}
+                            className="w-full max-w-sm bg-green-500 text-white font-bold py-3 px-4 rounded-xl shadow-lg flex items-center justify-center mb-4 hover:bg-green-600 transition-colors border border-green-600 animate-pulse"
+                        >
+                            <i className="fa-solid fa-download mr-3 text-xl"></i>
+                            Installer l'application
+                        </button>
+                    )}
+
                     <div className="flex items-center w-full max-w-sm my-4">
                         <div className="flex-grow border-t border-gray-200"></div>
                         <span className="flex-shrink-0 mx-4 text-gray-400 text-sm">ou</span>
@@ -608,6 +651,8 @@
             rootElement.innerHTML = "Erreur critique : ReactDOM n'a pas pu être chargé.";
         }
     </script>
+
+    <!-- Déclencheur du Pop-up d'installation automatique et Service Worker -->
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', function() {
@@ -619,7 +664,5 @@
             });
         }
     </script>
-</body>
-</html>
 </body>
 </html>
