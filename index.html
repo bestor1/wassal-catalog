@@ -3,11 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Wassal Catalog - Partage de stock</title>
+    <title>TourniPos Catalog - Partage de stock</title>
     
     <!-- PWA / Fichiers d'installation -->
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#2563eb">
+    
+    <!-- Icônes du navigateur et d'application -->
+    <link rel="icon" type="image/jpeg" href="tournipos_catalog_logo.jpg">
+    <link rel="apple-touch-icon" href="tournipos_catalog_logo.jpg">
     
     <!-- Polyfills absolus pour réparer les anciens navigateurs (Windows 7 / IE11) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-polyfill/6.26.0/polyfill.min.js"></script>
@@ -81,7 +85,7 @@
         };
 
         function App() {
-            const [view, setView] = useState('login'); // login, loading, catalog, explorer
+            const [view, setView] = useState('login'); 
             const [loadingMessage, setLoadingMessage] = useState('');
             const [products, setProducts] = useState([]);
             const [searchQuery, setSearchQuery] = useState('');
@@ -95,11 +99,8 @@
 
             useEffect(function() {
                 const handler = function(e) {
-                    // Empêche Chrome d'afficher sa petite barre par défaut
                     e.preventDefault();
-                    // Sauvegarde l'événement pour notre propre bouton
                     setDeferredPrompt(e);
-                    // Affiche le gros bouton vert
                     setIsInstallable(true);
                 };
                 window.addEventListener('beforeinstallprompt', handler);
@@ -108,7 +109,6 @@
 
             const handleInstallClick = async function() {
                 if (!deferredPrompt) return;
-                // Affiche la vraie boîte de dialogue d'installation du téléphone
                 deferredPrompt.prompt();
                 const choiceResult = await deferredPrompt.userChoice;
                 if (choiceResult.outcome === 'accepted') {
@@ -123,7 +123,6 @@
             const [selectedTable, setSelectedTable] = useState('');
             const [tableData, setTableData] = useState({ cols: [], rows: [] });
 
-            // On utilise v2 pour forcer l'application à oublier son ancien mauvais réglage
             const [config, setConfig] = useState(() => {
                 let res = {};
                 for (let k in DEFAULT_CONFIG) res[k] = DEFAULT_CONFIG[k];
@@ -240,7 +239,6 @@
                 }
             };
 
-            // LE NOUVEAU CERVEAU CALIBRÉ SUR VOTRE CAPTURE D'ÉCRAN
             const autoDetectConfig = function(sch) {
                 const tables = Object.keys(sch);
                 if (tables.length === 0) return null;
@@ -250,20 +248,17 @@
 
                 const findCol = function(cols, exactList, partialList) {
                     if (!cols) return '';
-                    // 1. Cherche une correspondance exacte d'abord
                     var match = cols.find(function(c) { return exactList.indexOf(c.toLowerCase()) !== -1; });
                     if (match) return match;
-                    // 2. Sinon cherche une partie du mot
                     match = cols.find(function(c) {
                         return partialList.some(function(p) { return c.toLowerCase().indexOf(p) !== -1; });
                     });
                     return match || cols[0] || '';
                 };
 
-                // Calibrage exact selon votre capture d'écran !
                 const nameCol = findCol(pCols, ['name', 'nom'], ['name', 'nom', 'desig']);
-                const priceCol = findCol(pCols, ['sell_price', 'prix_vente'], ['sell', 'vente', 'price', 'prix']); // Priorité à "sell_price" pour ignorer "buy_price"
-                const inlineStockCol = findCol(pCols, ['stock', 'quantity', 'qte'], ['stock', 'quant']); // Priorité directe à "stock"
+                const priceCol = findCol(pCols, ['sell_price', 'prix_vente'], ['sell', 'vente', 'price', 'prix']); 
+                const inlineStockCol = findCol(pCols, ['stock', 'quantity', 'qte'], ['stock', 'quant']); 
                 const prodIdCol = findCol(pCols, ['id', 'product_id'], ['id']);
 
                 return { 
@@ -293,9 +288,7 @@
                     return res[0].values.map(function(row) {
                         return {
                             nom: row[0] || "Produit sans nom",
-                            // On divise le prix par 100 pour enlever les centimes cachés (ex: 3500 devient 35)
                             prix: (row[1] || 0) / 100,
-                            // On divise la quantité par 1000 pour retrouver les vraies pièces
                             quantite: Math.round((row[2] || 0) / 1000)
                         };
                     });
@@ -304,7 +297,7 @@
             };
 
             const parseDatabase = async function(arrayBuffer) {
-                setLoadingMessage("Analyse des produits (Recherche de 'stock' et 'sell_price')...");
+                setLoadingMessage("Analyse des produits...");
                 setDbBuffer(arrayBuffer); 
                 
                 try {
@@ -339,7 +332,7 @@
                         saveConfigToStorage(activeConfig);
                         setView('catalog');
                     } catch (e) {
-                        console.warn("Échec requête automatique :", e);
+                        console.warn("Échec requête :", e);
                         setError("L'auto-détection a échoué. Veuillez explorer la base.");
                         setView('explorer'); 
                     }
@@ -360,9 +353,9 @@
                     const SQL = await initSqlJsReady;
                     const db = new SQL.Database();
                     db.run("CREATE TABLE Product (id INTEGER PRIMARY KEY, name TEXT, sell_price REAL, stock INTEGER, actif INTEGER);");
-                    db.run("INSERT INTO Product VALUES (1, 'Jus d''orange', 140.00, 0, 1);");
-                    db.run("INSERT INTO Product VALUES (2, 'Bimo Double Mix', 120.00, 21, 1);");
-                    db.run("INSERT INTO Product VALUES (3, 'Bimo Gaufrette', 130.00, 50, 1);");
+                    db.run("INSERT INTO Product VALUES (1, 'Jus d''orange', 14000.00, 0, 1);");
+                    db.run("INSERT INTO Product VALUES (2, 'Bimo Double Mix', 12000.00, 21000, 1);");
+                    db.run("INSERT INTO Product VALUES (3, 'Bimo Gaufrette', 13000.00, 50000, 1);");
                     const binaryArray = db.export();
                     db.close();
                     setDbInfo({ name: 'demo.db', date: new Date().toLocaleString('fr-FR') });
@@ -393,13 +386,14 @@
                     text += dot + " *" + p.nom + "*\n";
                     text += money + " Prix : " + p.prix + " DZD | " + box + " Stock : " + status + "\n\n";
                 });
-                text += "_Généré via Wassal Catalog_";
+                text += "_Généré via TourniPos Catalog_";
                 return text;
             };
 
             const shareWhatsApp = function() {
                 const text = generateText();
-                const url = "https://web.whatsapp.com/send?text=" + encodeURIComponent(text);
+                // Utilisation de la véritable application mobile WhatsApp
+                const url = "https://api.whatsapp.com/send?text=" + encodeURIComponent(text);
                 window.open(url, '_blank');
             };
 
@@ -427,7 +421,7 @@
                 return (
                     <div className="flex flex-col h-screen bg-gray-900 text-green-400 p-4 font-mono overflow-hidden z-50 absolute inset-0">
                         <div className="flex justify-between items-center mb-4 border-b border-green-700 pb-2 flex-shrink-0">
-                            <h1 className="text-xl font-bold text-white"><i className="fa-solid fa-database text-yellow-400 mr-2"></i> Explorateur Wassal</h1>
+                            <h1 className="text-xl font-bold text-white"><i className="fa-solid fa-database text-yellow-400 mr-2"></i> Explorateur</h1>
                             <button onClick={function() { setView('catalog'); }} className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg font-bold shadow-lg">Fermer</button>
                         </div>
                         
@@ -486,11 +480,14 @@
                     <div className="flex flex-col h-screen bg-gray-50">
                         <div className="bg-blue-600 text-white p-4 shadow-md z-10">
                             <div className="flex justify-between items-center mb-4">
-                                <div>
-                                    <h1 className="text-xl font-bold">Wassal Catalog</h1>
-                                    <p className="text-xs text-blue-200">
-                                        <i className="fa-solid fa-clock mr-1"></i> Données du : {dbInfo.date}
-                                    </p>
+                                <div className="flex items-center gap-3">
+                                    <img src="tournipos_catalog_logo.jpg" alt="Logo" className="w-10 h-10 rounded-lg shadow-sm border border-blue-400" />
+                                    <div>
+                                        <h1 className="text-xl font-bold">TourniPos Catalog</h1>
+                                        <p className="text-xs text-blue-200">
+                                            <i className="fa-solid fa-clock mr-1"></i> Données du : {dbInfo.date}
+                                        </p>
+                                    </div>
                                 </div>
                                 <div className="flex gap-2">
                                     <button 
@@ -583,10 +580,15 @@
 
             return (
                 <div className="flex flex-col items-center justify-center min-h-screen p-6 bg-white">
-                    <div className="w-20 h-20 bg-blue-100 text-blue-600 rounded-2xl flex items-center justify-center mb-6 shadow-sm">
-                        <i className="fa-solid fa-box-open text-4xl"></i>
-                    </div>
-                    <h1 className="text-3xl font-extrabold text-gray-900 mb-2">Wassal Catalog</h1>
+                    
+                    {/* LE NOUVEAU LOGO EST ICI */}
+                    <img 
+                        src="tournipos_catalog_logo.jpg" 
+                        alt="TourniPos Catalog" 
+                        className="w-28 h-28 rounded-2xl mb-4 shadow-md object-cover" 
+                    />
+                    
+                    <h1 className="text-3xl font-extrabold text-gray-900 mb-2">TourniPos Catalog</h1>
                     <p className="text-center text-gray-500 mb-8">
                         Connectez votre compte Google pour extraire automatiquement le catalogue depuis votre base de données.
                     </p>
@@ -611,7 +613,6 @@
                         Synchroniser via Google Drive
                     </button>
 
-                    {/* --- LE NOUVEAU BOUTON D'INSTALLATION --- */}
                     {isInstallable && (
                         <button 
                             onClick={handleInstallClick}
