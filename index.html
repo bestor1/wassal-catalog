@@ -608,5 +608,18 @@
             rootElement.innerHTML = "Erreur critique : ReactDOM n'a pas pu être chargé.";
         }
     </script>
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', function() {
+                navigator.serviceWorker.register('./sw.js').then(function(registration) {
+                    console.log('ServiceWorker activé avec succès');
+                }, function(err) {
+                    console.log('Erreur du ServiceWorker :', err);
+                });
+            });
+        }
+    </script>
+</body>
+</html>
 </body>
 </html>
