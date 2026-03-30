@@ -261,7 +261,8 @@
                         return {
                             nom: row[0] || "Produit sans nom",
                             prix: row[1] || 0,
-                            quantite: Math.round(row[2] || 0)
+                            // On divise par 1000 pour retrouver les vraies pièces (ex: 7990000 devient 7990)
+                            quantite: Math.round((row[2] || 0) / 1000)
                         };
                     });
                 }
