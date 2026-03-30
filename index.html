@@ -118,11 +118,6 @@
                 setIsInstallable(false);
             };
 
-            const [dbBuffer, setDbBuffer] = useState(null);
-            const [explorerTables, setExplorerTables] = useState([]);
-            const [selectedTable, setSelectedTable] = useState('');
-            const [tableData, setTableData] = useState({ cols: [], rows: [] });
-
             const [config, setConfig] = useState(() => {
                 let res = {};
                 for (let k in DEFAULT_CONFIG) res[k] = DEFAULT_CONFIG[k];
@@ -214,31 +209,6 @@
                 }
             };
 
-            const loadExplorerTable = async function(tableName, buffer) {
-                if (!buffer) return;
-                try {
-                    const SQL = await initSqlJsReady;
-                    const db = new SQL.Database(new Uint8Array(buffer));
-                    
-                    const colRes = db.exec('PRAGMA table_info("' + tableName + '")');
-                    let cols = [];
-                    if (colRes.length > 0) {
-                        cols = colRes[0].values.map(function(r) { return r[1]; });
-                    }
-                    
-                    const dataRes = db.exec('SELECT * FROM "' + tableName + '" LIMIT 50');
-                    let rows = [];
-                    if (dataRes.length > 0) {
-                        rows = dataRes[0].values;
-                    }
-                    
-                    setTableData({ cols: cols, rows: rows });
-                    db.close();
-                } catch (e) {
-                    console.error(e);
-                }
-            };
-
             const autoDetectConfig = function(sch) {
                 const tables = Object.keys(sch);
                 if (tables.length === 0) return null;
@@ -298,7 +268,6 @@
 
             const parseDatabase = async function(arrayBuffer) {
                 setLoadingMessage("Analyse des produits...");
-                setDbBuffer(arrayBuffer); 
                 
                 try {
                     const SQL = await initSqlJsReady;
@@ -310,7 +279,6 @@
                         const tablesInfo = db.exec("SELECT name FROM sqlite_master WHERE type='table'");
                         if (tablesInfo.length > 0) {
                             allTables = tablesInfo[0].values.map(function(r) { return r[0]; });
-                            setExplorerTables(allTables);
                             allTables.forEach(function(t) {
                                 const colRes = db.exec('PRAGMA table_info("' + t + '")');
                                 if (colRes.length > 0) {
@@ -333,8 +301,8 @@
                         setView('catalog');
                     } catch (e) {
                         console.warn("Échec requête :", e);
-                        setError("L'auto-détection a échoué. Veuillez explorer la base.");
-                        setView('explorer'); 
+                        setError("Le format de la base de données est invalide ou le catalogue est vide.");
+                        setView('login'); 
                     }
 
                     db.close();
@@ -417,64 +385,6 @@
                 );
             }
 
-            if (view === 'explorer') {
-                return (
-                    <div className="flex flex-col h-screen bg-gray-900 text-green-400 p-4 font-mono overflow-hidden z-50 absolute inset-0">
-                        <div className="flex justify-between items-center mb-4 border-b border-green-700 pb-2 flex-shrink-0">
-                            <h1 className="text-xl font-bold text-white"><i className="fa-solid fa-database text-yellow-400 mr-2"></i> Explorateur</h1>
-                            <button onClick={function() { setView('catalog'); }} className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg font-bold shadow-lg">Fermer</button>
-                        </div>
-                        
-                        <p className="text-xs text-gray-400 mb-4 flex-shrink-0">
-                            Voici l'intérieur de la base. Si le catalogue ne s'affiche pas bien, repérez les colonnes de nom, prix et quantité.
-                        </p>
-
-                        <div className="mb-4 flex-shrink-0">
-                            <label className="text-white font-bold mr-2">Choisir une table :</label>
-                            <select 
-                                className="bg-black border border-green-500 text-green-400 p-2 rounded"
-                                value={selectedTable}
-                                onChange={function(e) {
-                                    var t = e.target.value;
-                                    setSelectedTable(t);
-                                    loadExplorerTable(t, dbBuffer);
-                                }}
-                            >
-                                <option value="">-- Sélectionner --</option>
-                                {explorerTables.map(function(t) { return <option key={t} value={t}>{t}</option>; })}
-                            </select>
-                        </div>
-
-                        <div className="flex-1 overflow-auto bg-black border border-gray-700 rounded-lg p-2">
-                            {tableData.cols.length === 0 ? (
-                                <p className="text-gray-500 p-4">En attente de sélection...</p>
-                            ) : (
-                                <table className="w-full text-left border-collapse text-xs">
-                                    <thead>
-                                        <tr>
-                                            {tableData.cols.map(function(c, i) { 
-                                                return <th key={i} className="border-b border-green-600 p-2 text-yellow-300 sticky top-0 bg-black whitespace-nowrap">{c}</th>; 
-                                            })}
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {tableData.rows.map(function(row, rowIndex) {
-                                            return (
-                                                <tr key={rowIndex} className="border-b border-gray-800 hover:bg-gray-800">
-                                                    {row.map(function(cell, cellIndex) {
-                                                        return <td key={cellIndex} className="p-2 whitespace-nowrap">{cell !== null ? String(cell) : 'NULL'}</td>;
-                                                    })}
-                                                </tr>
-                                            );
-                                        })}
-                                    </tbody>
-                                </table>
-                            )}
-                        </div>
-                    </div>
-                );
-            }
-
             if (view === 'catalog') {
                 return (
                     <div className="flex flex-col h-screen bg-gray-50">
@@ -490,13 +400,6 @@
                                     </div>
                                 </div>
                                 <div className="flex gap-2">
-                                    <button 
-                                        onClick={function() { setView('explorer'); }}
-                                        className="bg-blue-800 hover:bg-gray-800 p-2 rounded-full text-sm transition-colors text-yellow-300 shadow-inner flex items-center justify-center w-8 h-8"
-                                        title="Voir l'intérieur de la base"
-                                    >
-                                        <i className="fa-solid fa-bug"></i>
-                                    </button>
                                     <button 
                                         onClick={function() { setView('login'); }}
                                         className="bg-blue-700 hover:bg-blue-800 p-2 rounded-full text-sm transition-colors flex items-center justify-center w-8 h-8"
@@ -534,7 +437,6 @@
                             {filteredProducts.length === 0 ? (
                                 <div className="text-center mt-10">
                                     <p className="text-gray-500 mb-4">Aucun produit trouvé.</p>
-                                    <p className="text-sm text-gray-400">Cliquez sur l'icône <i className="fa-solid fa-bug text-yellow-500 mx-1"></i> en haut à droite pour inspecter.</p>
                                 </div>
                             ) : (
                                 filteredProducts.map(function(p, index) {
