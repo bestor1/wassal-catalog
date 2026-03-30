@@ -5,18 +5,41 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Wassal Catalog - Partage de stock</title>
     
+    <!-- Polyfills absolus pour réparer les anciens navigateurs (Windows 7 / IE11) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-polyfill/6.26.0/polyfill.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/whatwg-fetch/3.6.19/fetch.min.js"></script>
+
+    <!-- Filet de sécurité Anti-Crash -->
+    <script>
+        window.onerror = function(msg, url, lineNo, columnNo, error) {
+            var el = document.getElementById('root');
+            var source = url ? url : 'Script local (index.html)';
+            if (el) {
+                el.innerHTML = '<div style="padding:20px; color:#b91c1c; font-family:sans-serif; background:#fef2f2; height:100vh;">' +
+                               '<h2 style="font-weight:bold; font-size: 20px;">⚠️ Erreur Technique</h2>' +
+                               '<p style="margin-top:10px;">Le navigateur a bloqué le démarrage.</p>' +
+                               '<div style="background:#000; color:#0f0; padding:15px; border-radius:5px; margin-top:15px; font-family:monospace; font-size:12px; overflow-x:auto;">' +
+                               '<strong>Message:</strong> ' + msg + '<br><br>' +
+                               '<strong>Fichier source:</strong> ' + source + '<br><br>' +
+                               '<strong>Ligne:</strong> ' + lineNo +
+                               '</div></div>';
+            }
+            return false;
+        };
+    </script>
+
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     
     <!-- FontAwesome Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
-    <!-- React & ReactDOM (Retour à la version 18 d'origine qui marchait très bien !) -->
-    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    <!-- React 18 (Mise à jour pour corriger l'erreur createRoot) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
     
-    <!-- Babel pour JSX -->
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Babel 6 (LA seule version qui empêche l'erreur 'Unexpected token ?' sur Windows 7) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/6.26.0/babel.min.js"></script>
     
     <!-- SQL.js (SQLite dans le navigateur) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-wasm.js"></script>
@@ -32,16 +55,24 @@
     </style>
 </head>
 <body>
-    <div id="root"></div>
+    <div id="root">
+        <div style="padding: 20px; text-align: center; color: #666; font-family: sans-serif;">
+            Chargement de l'application... (Si cet écran reste figé, vérifiez votre connexion)
+        </div>
+    </div>
 
-    <script type="text/babel">
+    <!-- Traduction du code avec Babel 6 -->
+    <script type="text/babel" data-presets="es2015,react,stage-2">
+        if (typeof React === 'undefined' || typeof ReactDOM === 'undefined') {
+            console.error("React n'a pas pu être chargé. Vérifiez votre connexion internet ou vos extensions bloquantes.");
+        }
+
         const { useState, useEffect, useMemo } = React;
 
-        // L'ID est déjà pré-rempli pour vous !
         const GOOGLE_CLIENT_ID = "807679772275-56vf7kfl75jjeujht8vu7pgmja5evd5r.apps.googleusercontent.com"; 
 
         function App() {
-            const [view, setView] = useState('login'); // login, loading, catalog
+            const [view, setView] = useState('login'); // login, loading, catalog, explorer
             const [loadingMessage, setLoadingMessage] = useState('');
             const [products, setProducts] = useState([]);
             const [searchQuery, setSearchQuery] = useState('');
@@ -49,17 +80,19 @@
             const [dbInfo, setDbInfo] = useState({ date: null, name: '' });
             const [hideEmptyStock, setHideEmptyStock] = useState(false);
             
-            // États pour le Diagnostic
-            const [diagnosticData, setDiagnosticData] = useState(null);
-            const [showDiagnostic, setShowDiagnostic] = useState(false);
+            // --- ÉTATS POUR L'EXPLORATEUR DE BASE DE DONNÉES ---
+            const [dbBuffer, setDbBuffer] = useState(null);
+            const [explorerTables, setExplorerTables] = useState([]);
+            const [selectedTable, setSelectedTable] = useState('');
+            const [tableData, setTableData] = useState({ cols: [], rows: [] });
 
-            const initSqlJsReady = useMemo(() => {
+            const initSqlJsReady = useMemo(function() {
                 return window.initSqlJs({
-                    locateFile: file => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/${file}`
+                    locateFile: function(file) { return "https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/" + file; }
                 });
             }, []);
 
-            const handleGoogleLogin = () => {
+            const handleGoogleLogin = function() {
                 setError(null);
                 if (GOOGLE_CLIENT_ID.trim() === "") {
                     setError("Configuration requise : Veuillez insérer votre GOOGLE_CLIENT_ID.");
@@ -69,7 +102,7 @@
                 const client = google.accounts.oauth2.initTokenClient({
                     client_id: GOOGLE_CLIENT_ID,
                     scope: 'https://www.googleapis.com/auth/drive.readonly',
-                    callback: (tokenResponse) => {
+                    callback: function(tokenResponse) {
                         if (tokenResponse && tokenResponse.access_token) {
                             fetchLatestDatabase(tokenResponse.access_token);
                         }
@@ -78,14 +111,14 @@
                 client.requestAccessToken();
             };
 
-            const fetchLatestDatabase = async (accessToken) => {
+            const fetchLatestDatabase = async function(accessToken) {
                 setView('loading');
                 setLoadingMessage("Recherche de la sauvegarde sur Google Drive...");
                 
                 try {
                     const searchUrl = 'https://www.googleapis.com/drive/v3/files?q=name+contains+".db"&orderBy=modifiedTime+desc&pageSize=1&fields=files(id,name,modifiedTime)';
                     const searchRes = await fetch(searchUrl, {
-                        headers: { Authorization: `Bearer ${accessToken}` }
+                        headers: { Authorization: "Bearer " + accessToken }
                     });
                     const searchData = await searchRes.json();
 
@@ -95,11 +128,11 @@
 
                     const file = searchData.files[0];
                     setDbInfo({ name: file.name, date: new Date(file.modifiedTime).toLocaleString('fr-FR') });
-                    setLoadingMessage(`Téléchargement de ${file.name}...`);
+                    setLoadingMessage("Téléchargement de " + file.name + "...");
 
-                    const downloadUrl = `https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`;
+                    const downloadUrl = "https://www.googleapis.com/drive/v3/files/" + file.id + "?alt=media";
                     const downloadRes = await fetch(downloadUrl, {
-                        headers: { Authorization: `Bearer ${accessToken}` }
+                        headers: { Authorization: "Bearer " + accessToken }
                     });
                     
                     if (!downloadRes.ok) throw new Error("Erreur lors du téléchargement.");
@@ -114,104 +147,110 @@
                 }
             };
 
-            // --------------------------------------------------------
-            // LECTURE SQLITE INTÉLLIGENTE (AUTO-ÉVALUATEUR)
-            // --------------------------------------------------------
-            const parseDatabase = async (arrayBuffer) => {
-                setLoadingMessage("Analyse avancée de la structure de stock...");
+            const loadExplorerTable = async function(tableName, buffer) {
+                if (!buffer) return;
+                try {
+                    const SQL = await initSqlJsReady;
+                    const db = new SQL.Database(new Uint8Array(buffer));
+                    
+                    const colRes = db.exec('PRAGMA table_info("' + tableName + '")');
+                    let cols = [];
+                    if (colRes.length > 0) {
+                        cols = colRes[0].values.map(function(r) { return r[1]; });
+                    }
+                    
+                    // On charge les 50 premières lignes pour analyser
+                    const dataRes = db.exec('SELECT * FROM "' + tableName + '" LIMIT 50');
+                    let rows = [];
+                    if (dataRes.length > 0) {
+                        rows = dataRes[0].values;
+                    }
+                    
+                    setTableData({ cols: cols, rows: rows });
+                    db.close();
+                } catch (e) {
+                    console.error(e);
+                }
+            };
+
+            const parseDatabase = async function(arrayBuffer) {
+                setLoadingMessage("Analyse de la base Wassal...");
+                setDbBuffer(arrayBuffer); // Sauvegarde pour l'explorateur
+                
                 try {
                     const SQL = await initSqlJsReady;
                     const db = new SQL.Database(new Uint8Array(arrayBuffer));
                     
-                    let prodCols = [];
-                    let stockCols = [];
+                    // 1. Récupération de toutes les tables pour l'Explorateur
                     let allTables = [];
-                    
                     try {
                         const tablesInfo = db.exec("SELECT name FROM sqlite_master WHERE type='table'");
-                        if (tablesInfo.length > 0) allTables = tablesInfo[0].values.map(r => r[0]);
-                        
+                        if (tablesInfo.length > 0) {
+                            allTables = tablesInfo[0].values.map(function(r) { return r[0]; });
+                            setExplorerTables(allTables);
+                        }
+                    } catch(e) { console.warn(e); }
+
+                    // 2. Tentative de lecture classique
+                    let prodCols = [];
+                    let stockCols = [];
+                    try {
                         const pInfo = db.exec("PRAGMA table_info(Product)");
-                        if (pInfo.length > 0) prodCols = pInfo[0].values.map(row => row[1]);
+                        if (pInfo.length > 0) prodCols = pInfo[0].values.map(function(row) { return row[1]; });
                         
                         const sInfo = db.exec("PRAGMA table_info(Stock)");
-                        if (sInfo.length > 0) stockCols = sInfo[0].values.map(row => row[1]);
-                    } catch(e) { console.warn("PRAGMA error", e); }
+                        if (sInfo.length > 0) stockCols = sInfo[0].values.map(function(row) { return row[1]; });
+                    } catch(e) { }
 
-                    if (prodCols.length === 0) throw new Error("La table 'Product' est introuvable.");
-
-                    // Recherche des colonnes par mots clés
-                    const findCol = (cols, exactList, partialList = [], excludeList = []) => {
-                        let found = cols.find(c => exactList.includes(c.toLowerCase()));
+                    const findCol = function(cols, exactList, partialList) {
+                        let found = cols.find(function(c) { return exactList.indexOf(c.toLowerCase()) !== -1; });
                         if (found) return found;
-                        found = cols.find(c => {
-                            const l = c.toLowerCase();
-                            return partialList.some(p => l.includes(p)) && !excludeList.some(e => l.includes(e));
-                        });
+                        if (partialList) {
+                            found = cols.find(function(c) { 
+                                const l = c.toLowerCase();
+                                return partialList.some(function(p) { return l.indexOf(p) !== -1; });
+                            });
+                        }
                         return found;
                     };
 
-                    // Colonnes reconnues
-                    const nameCol = findCol(prodCols, ['name', 'nom', 'designation', 'label', 'libelle'], ['nom', 'desig', 'name']);
-                    const priceCol = findCol(prodCols, ['unit_price_1', 'price', 'prix', 'sell_price', 'tarif'], ['prix', 'price', 'vente'], ['achat', 'cost', 'min', 'max', 'revient']);
-                    const prodIdCol = findCol(prodCols, ['id', '_id', 'product_id', 'id_product'], ['id']);
+                    const nameCol = findCol(prodCols, ['name', 'nom', 'designation'], ['nom', 'desig']);
+                    const priceCol = findCol(prodCols, ['unit_price_1', 'price', 'prix'], ['prix', 'price']);
+                    const prodIdCol = findCol(prodCols, ['id', '_id', 'product_id'], ['id']);
 
-                    const inlineStockCol = findCol(prodCols, ['current_stock', 'quantity', 'quantite', 'stock', 'qte', 'qty', 'solde'], ['stock', 'qte', 'quant', 'qty', 'solde'], ['alert', 'min', 'max', 'seuil']);
-                    const stockQtyCol = findCol(stockCols, ['current_stock', 'quantity', 'quantite', 'stock', 'qte', 'qty'], ['stock', 'qte', 'quant', 'qty']);
-                    const stockProdIdCol = findCol(stockCols, ['id_product', 'product_id', 'produit_id', 'productid'], ['prod', 'id']);
-
-                    if (!nameCol || !priceCol) throw new Error("Impossible d'identifier les colonnes Nom ou Prix.");
+                    const inlineStockCol = findCol(prodCols, ['current_stock', 'quantity', 'quantite', 'stock'], ['stock', 'qte']);
+                    const stockQtyCol = findCol(stockCols, ['current_stock', 'quantity', 'quantite', 'stock'], ['stock', 'qte']);
+                    const stockProdIdCol = findCol(stockCols, ['id_product', 'product_id'], ['prod', 'id']);
 
                     let finalRes = null;
-                    let usedQuery = "";
-                    let maxTotalStock = -1;
 
-                    const evaluateQuery = (q) => {
-                        try {
-                            const r = db.exec(q);
-                            if (r.length > 0) {
-                                const total = r[0].values.reduce((acc, row) => acc + Number(row[2] || 0), 0);
-                                if (total > maxTotalStock) {
-                                    maxTotalStock = total;
-                                    finalRes = r;
-                                    usedQuery = q;
-                                }
-                            }
-                        } catch(e) { console.warn("Échec requête:", q, e); }
-                    };
+                    if (nameCol && priceCol) {
+                        const evaluateQuery = function(q) {
+                            try {
+                                const r = db.exec(q);
+                                if (r.length > 0) finalRes = r;
+                            } catch(e) { }
+                        };
 
-                    // Les 3 requêtes possibles
-                    if (inlineStockCol) {
-                        evaluateQuery(`SELECT ${nameCol}, ${priceCol}, ${inlineStockCol} FROM Product LIMIT 3000`);
-                    }
-
-                    if (stockCols.length > 0 && stockQtyCol && stockProdIdCol && prodIdCol) {
-                        evaluateQuery(`SELECT p.${nameCol}, p.${priceCol}, SUM(IFNULL(s.${stockQtyCol}, 0)) FROM Product p LEFT JOIN Stock s ON p.${prodIdCol} = s.${stockProdIdCol} GROUP BY p.${prodIdCol} LIMIT 3000`);
-                    }
-
-                    if (!finalRes) {
-                        evaluateQuery(`SELECT ${nameCol}, ${priceCol}, 1 FROM Product LIMIT 3000`);
+                        if (inlineStockCol) {
+                            evaluateQuery('SELECT "' + nameCol + '", "' + priceCol + '", "' + inlineStockCol + '" FROM Product LIMIT 3000');
+                        } else if (stockCols.length > 0 && stockQtyCol && stockProdIdCol && prodIdCol) {
+                            evaluateQuery('SELECT p."' + nameCol + '", p."' + priceCol + '", SUM(IFNULL(s."' + stockQtyCol + '", 0)) FROM Product p LEFT JOIN Stock s ON p."' + prodIdCol + '" = s."' + stockProdIdCol + '" GROUP BY p."' + prodIdCol + '" LIMIT 3000');
+                        } else {
+                            evaluateQuery('SELECT "' + nameCol + '", "' + priceCol + '", 1 FROM Product LIMIT 3000');
+                        }
                     }
 
                     let parsedProducts = [];
                     if (finalRes && finalRes.length > 0) {
-                        parsedProducts = finalRes[0].values.map(row => ({
-                            nom: row[0] || "Produit",
-                            prix: row[1] || 0,
-                            quantite: Math.round(row[2] || 0) 
-                        }));
-                    } else {
-                        throw new Error("Catalogue vide.");
+                        parsedProducts = finalRes[0].values.map(function(row) {
+                            return {
+                                nom: row[0] || "Produit",
+                                prix: row[1] || 0,
+                                quantite: Math.round(row[2] || 0) 
+                            };
+                        });
                     }
-
-                    // Sauvegarde pour le rapport visuel 🐛
-                    setDiagnosticData({
-                        tables: allTables.join(', '),
-                        prodCols: prodCols.join(', '),
-                        stockCols: stockCols.join(', '),
-                        usedQuery: usedQuery,
-                        totalStockFound: maxTotalStock
-                    });
 
                     db.close();
                     setProducts(parsedProducts);
@@ -224,7 +263,7 @@
                 }
             };
 
-            const loadDemoData = async () => {
+            const loadDemoData = async function() {
                 setView('loading');
                 setLoadingMessage("Génération du fichier de démonstration...");
                 setError(null);
@@ -246,22 +285,22 @@
                 }
             };
 
-            const filteredProducts = products.filter(p => {
-                const matchSearch = p.nom.toLowerCase().includes(searchQuery.toLowerCase());
+            const filteredProducts = products.filter(function(p) {
+                const matchSearch = p.nom.toLowerCase().indexOf(searchQuery.toLowerCase()) !== -1;
                 const matchStock = hideEmptyStock ? p.quantite > 0 : true;
                 return matchSearch && matchStock;
             });
 
-            const generateText = () => {
-                const cart = String.fromCodePoint(0x1F6D2);
-                const check = String.fromCodePoint(0x2705);
-                const cross = String.fromCodePoint(0x274C);
-                const dot = String.fromCodePoint(0x25AA, 0xFE0F);
-                const money = String.fromCodePoint(0x1F4B0);
-                const box = String.fromCodePoint(0x1F4E6);
+            const generateText = function() {
+                const cart = "\uD83D\uDED2";
+                const check = "\u2705";
+                const cross = "\u274C";
+                const dot = "\u25AA\uFE0F";
+                const money = "\uD83D\uDCB0";
+                const box = "\uD83D\uDCE6";
 
                 let text = cart + " *CATALOGUE DISPONIBLE*\n\n";
-                filteredProducts.forEach(p => {
+                filteredProducts.forEach(function(p) {
                     const status = p.quantite > 0 ? check : cross + " Rupture";
                     text += dot + " *" + p.nom + "*\n";
                     text += money + " Prix : " + p.prix + " DZD | " + box + " Stock : " + status + "\n\n";
@@ -270,13 +309,13 @@
                 return text;
             };
 
-            const shareWhatsApp = () => {
+            const shareWhatsApp = function() {
                 const text = generateText();
                 const url = "https://web.whatsapp.com/send?text=" + encodeURIComponent(text);
                 window.open(url, '_blank');
             };
 
-            const copyToClipboard = () => {
+            const copyToClipboard = function() {
                 const text = generateText();
                 const textArea = document.createElement("textarea");
                 textArea.value = text;
@@ -296,37 +335,62 @@
                 );
             }
 
-            // ÉCRAN DE DIAGNOSTIC (LE BOUTON INSECTE 🐛)
-            if (showDiagnostic && diagnosticData) {
+            // =================================================================
+            // L'OUTIL ULTIME : L'EXPLORATEUR DE BASE DE DONNÉES WASSAL
+            // =================================================================
+            if (view === 'explorer') {
                 return (
-                    <div className="flex flex-col h-screen bg-gray-900 text-green-400 p-6 font-mono overflow-auto z-50 absolute inset-0">
-                        <div className="flex justify-between items-center mb-6 border-b border-green-700 pb-4">
-                            <h1 className="text-2xl font-bold text-white"><i className="fa-solid fa-bug text-yellow-400 mr-2"></i> Mode Diagnostic</h1>
-                            <button onClick={() => setShowDiagnostic(false)} className="bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-lg font-bold shadow-lg">Fermer</button>
+                    <div className="flex flex-col h-screen bg-gray-900 text-green-400 p-4 font-mono overflow-hidden z-50 absolute inset-0">
+                        <div className="flex justify-between items-center mb-4 border-b border-green-700 pb-2 flex-shrink-0">
+                            <h1 className="text-xl font-bold text-white"><i className="fa-solid fa-database text-yellow-400 mr-2"></i> Explorateur Wassal</h1>
+                            <button onClick={function() { setView('catalog'); }} className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg font-bold shadow-lg">Fermer</button>
                         </div>
                         
-                        <div className="space-y-6 text-sm">
-                            <div className="bg-black p-4 rounded-lg border border-gray-700">
-                                <h2 className="text-yellow-400 font-bold text-lg mb-2">1. Tables identifiées dans la base :</h2>
-                                <p className="text-gray-300 break-words">{diagnosticData.tables}</p>
-                            </div>
+                        <p className="text-xs text-gray-400 mb-4 flex-shrink-0">
+                            Sélectionnez une table ci-dessous pour voir directement comment vos données sont stockées. Cherchez la table des produits (souvent "Product", "Article" ou "Item").
+                        </p>
 
-                            <div className="bg-black p-4 rounded-lg border border-gray-700">
-                                <h2 className="text-yellow-400 font-bold text-lg mb-2">2. Colonnes de la table [Product] :</h2>
-                                <p className="text-blue-300 break-words">{diagnosticData.prodCols || "Aucune"}</p>
-                            </div>
+                        <div className="mb-4 flex-shrink-0">
+                            <label className="text-white font-bold mr-2">Choisir une table :</label>
+                            <select 
+                                className="bg-black border border-green-500 text-green-400 p-2 rounded"
+                                value={selectedTable}
+                                onChange={function(e) {
+                                    var t = e.target.value;
+                                    setSelectedTable(t);
+                                    loadExplorerTable(t, dbBuffer);
+                                }}
+                            >
+                                <option value="">-- Sélectionner une table --</option>
+                                {explorerTables.map(function(t) { return <option key={t} value={t}>{t}</option>; })}
+                            </select>
+                        </div>
 
-                            <div className="bg-black p-4 rounded-lg border border-gray-700">
-                                <h2 className="text-yellow-400 font-bold text-lg mb-2">3. Colonnes de la table [Stock] :</h2>
-                                <p className="text-blue-300 break-words">{diagnosticData.stockCols || "Aucune"}</p>
-                            </div>
-
-                            <div className="bg-black p-4 rounded-lg border border-green-700">
-                                <h2 className="text-green-400 font-bold text-lg mb-2">4. Décision de l'Intelligence Artificielle :</h2>
-                                <p className="mb-2"><span className="text-white">Requête gagnante utilisée :</span> <br/>
-                                <span className="text-purple-400">{diagnosticData.usedQuery || "Aucune requête valide"}</span></p>
-                                <p><span className="text-white">Stock total calculé :</span> <span className="text-xl font-bold text-green-500">{diagnosticData.totalStockFound}</span></p>
-                            </div>
+                        <div className="flex-1 overflow-auto bg-black border border-gray-700 rounded-lg p-2">
+                            {tableData.cols.length === 0 ? (
+                                <p className="text-gray-500 p-4">En attente de sélection...</p>
+                            ) : (
+                                <table className="w-full text-left border-collapse text-xs">
+                                    <thead>
+                                        <tr>
+                                            {tableData.cols.map(function(c, i) { 
+                                                return <th key={i} className="border-b border-green-600 p-2 text-yellow-300 sticky top-0 bg-black whitespace-nowrap">{c}</th>; 
+                                            })}
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {tableData.rows.map(function(row, rowIndex) {
+                                            return (
+                                                <tr key={rowIndex} className="border-b border-gray-800 hover:bg-gray-800">
+                                                    {row.map(function(cell, cellIndex) {
+                                                        return <td key={cellIndex} className="p-2 whitespace-nowrap">{cell !== null ? String(cell) : 'NULL'}</td>;
+                                                    })}
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            )}
                         </div>
                     </div>
                 );
@@ -344,16 +408,16 @@
                                     </p>
                                 </div>
                                 <div className="flex gap-2">
-                                    {/* Le fameux bouton de diagnostic */}
+                                    {/* Le bouton pour ouvrir l'Explorateur de Base de données */}
                                     <button 
-                                        onClick={() => setShowDiagnostic(true)}
+                                        onClick={function() { setView('explorer'); }}
                                         className="bg-blue-800 hover:bg-gray-800 p-2 rounded-full text-sm transition-colors text-yellow-300 shadow-inner flex items-center justify-center w-8 h-8"
-                                        title="Voir les colonnes (Diagnostic)"
+                                        title="Voir l'intérieur de la base"
                                     >
                                         <i className="fa-solid fa-bug"></i>
                                     </button>
                                     <button 
-                                        onClick={() => setView('login')}
+                                        onClick={function() { setView('login'); }}
                                         className="bg-blue-700 hover:bg-blue-800 p-2 rounded-full text-sm transition-colors flex items-center justify-center w-8 h-8"
                                     >
                                         <i className="fa-solid fa-sign-out-alt"></i>
@@ -368,7 +432,7 @@
                                     placeholder="Rechercher un produit..." 
                                     className="w-full pl-10 pr-4 py-2 rounded-lg text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-400 shadow-inner"
                                     value={searchQuery}
-                                    onChange={(e) => setSearchQuery(e.target.value)}
+                                    onChange={function(e) { setSearchQuery(e.target.value); }}
                                 />
                             </div>
 
@@ -378,7 +442,7 @@
                                         type="checkbox" 
                                         className="rounded border-none w-4 h-4 cursor-pointer accent-blue-400"
                                         checked={hideEmptyStock}
-                                        onChange={(e) => setHideEmptyStock(e.target.checked)}
+                                        onChange={function(e) { setHideEmptyStock(e.target.checked); }}
                                     />
                                     <span><i className="fa-solid fa-filter mr-1"></i> En stock uniquement</span>
                                 </label>
@@ -389,25 +453,27 @@
                             {filteredProducts.length === 0 ? (
                                 <div className="text-center mt-10">
                                     <p className="text-gray-500 mb-4">Aucun produit trouvé en stock.</p>
-                                    <p className="text-sm text-gray-400">Cliquez sur l'icône <i className="fa-solid fa-bug text-yellow-500 mx-1"></i> en haut à droite<br/>pour voir où se cachent vos quantités.</p>
+                                    <p className="text-sm text-gray-400">Cliquez sur l'icône <i className="fa-solid fa-bug text-yellow-500 mx-1"></i> en haut à droite<br/>pour trouver vos quantités.</p>
                                 </div>
                             ) : (
-                                filteredProducts.map((p, index) => (
-                                    <div key={index} className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex justify-between items-center">
-                                        <div>
-                                            <h2 className="font-bold text-gray-800 text-lg">{p.nom}</h2>
-                                            <p className="text-sm text-gray-500 mt-1">
-                                                Stock: <span className={p.quantite > 0 ? "text-green-600 font-medium" : "text-red-500 font-medium"}>
-                                                    {p.quantite > 0 ? `${p.quantite} dispo.` : "Rupture"}
-                                                </span>
-                                            </p>
+                                filteredProducts.map(function(p, index) {
+                                    return (
+                                        <div key={index} className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex justify-between items-center">
+                                            <div>
+                                                <h2 className="font-bold text-gray-800 text-lg">{p.nom}</h2>
+                                                <p className="text-sm text-gray-500 mt-1">
+                                                    Stock: <span className={p.quantite > 0 ? "text-green-600 font-medium" : "text-red-500 font-medium"}>
+                                                        {p.quantite > 0 ? p.quantite + " dispo." : "Rupture"}
+                                                    </span>
+                                                </p>
+                                            </div>
+                                            <div className="text-right">
+                                                <span className="font-extrabold text-blue-600">{p.prix}</span>
+                                                <span className="text-xs text-gray-500 ml-1">DZD</span>
+                                            </div>
                                         </div>
-                                        <div className="text-right">
-                                            <span className="font-extrabold text-blue-600">{p.prix}</span>
-                                            <span className="text-xs text-gray-500 ml-1">DZD</span>
-                                        </div>
-                                    </div>
-                                ))
+                                    );
+                                })
                             )}
                         </div>
 
@@ -473,9 +539,17 @@
         }
 
         const rootElement = document.getElementById('root');
-        
-        // Utilisation forcée et universelle du rendu classique pour éviter toute erreur de version
-        ReactDOM.render(<App />, rootElement);
+        if (typeof ReactDOM !== 'undefined') {
+            // Utilisation sécurisée de createRoot (compatible React 18)
+            if (ReactDOM.createRoot) {
+                const root = ReactDOM.createRoot(rootElement);
+                root.render(<App />);
+            } else {
+                ReactDOM.render(<App />, rootElement);
+            }
+        } else {
+            rootElement.innerHTML = "Erreur critique : ReactDOM n'a pas pu être chargé.";
+        }
     </script>
 </body>
 </html>
