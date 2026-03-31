@@ -82,7 +82,7 @@
         const DEFAULT_CONFIG = {
             prodTable: '', nameCol: '', priceCol: '', stockMode: 'inline',
             inlineStockCol: '', stockTable: '', stockQtyCol: '', stockProdIdCol: '', prodIdCol: '',
-            catTable: '', prodCatCol: '', catIdCol: '', catNameCol: ''
+            catTable: '', prodCatCol: '', catIdCol: '', catNameCol: '', inlineCatCol: ''
         };
 
         function App() {
@@ -93,11 +93,8 @@
             const [error, setError] = useState(null);
             const [dbInfo, setDbInfo] = useState({ date: null, name: '' });
             const [hideEmptyStock, setHideEmptyStock] = useState(false);
-            
-            // --- NOUVEAU : ÉTAT POUR LE FILTRE DE CATÉGORIE ---
             const [selectedCategory, setSelectedCategory] = useState('Toutes');
 
-            // --- NOUVEAU : LISTER TOUTES LES CATÉGORIES UNIQUES ---
             const allCategories = useMemo(function() {
                 const cats = { "Toutes": true };
                 products.forEach(function(p) {
@@ -105,13 +102,12 @@
                     cats[c] = true;
                 });
                 return Object.keys(cats).sort(function(a, b) {
-                    if (a === 'Toutes') return -1; // "Toutes" reste toujours en premier
+                    if (a === 'Toutes') return -1;
                     if (b === 'Toutes') return 1;
                     return a.localeCompare(b);
                 });
             }, [products]);
             
-            // --- ÉTATS POUR L'INSTALLATION (PWA) ---
             const [deferredPrompt, setDeferredPrompt] = useState(null);
             const [isInstallable, setIsInstallable] = useState(false);
 
@@ -140,7 +136,8 @@
                 let res = {};
                 for (let k in DEFAULT_CONFIG) res[k] = DEFAULT_CONFIG[k];
                 try { 
-                    const saved = localStorage.getItem('wassal_config_v2'); 
+                    // PASSAGE EN V3 : Force le nettoyage de la mémoire pour relancer la détection
+                    const saved = localStorage.getItem('wassal_config_v3'); 
                     if (saved) {
                         const parsed = JSON.parse(saved);
                         for (let k in parsed) res[k] = parsed[k];
@@ -150,7 +147,7 @@
             });
 
             const saveConfigToStorage = (cfg) => {
-                try { localStorage.setItem('wassal_config_v2', JSON.stringify(cfg)); } catch(e) {}
+                try { localStorage.setItem('wassal_config_v3', JSON.stringify(cfg)); } catch(e) {}
             };
 
             const initSqlJsReady = useMemo(function() {
@@ -222,7 +219,10 @@
                 const tables = Object.keys(sch);
                 if (tables.length === 0) return null;
                 
-                const prodTable = tables.find(function(t) { return t.toLowerCase() === 'product' || t.toLowerCase() === 'article'; }) || tables[0];
+                const prodTable = tables.find(function(t) { 
+                    const tl = t.toLowerCase();
+                    return tl === 'product' || tl === 'article' || tl === 'produit' || tl === 'produits'; 
+                }) || tables[0];
                 const pCols = sch[prodTable] || [];
 
                 const findCol = function(cols, exactList, partialList) {
@@ -232,22 +232,32 @@
                     match = cols.find(function(c) {
                         return partialList.some(function(p) { return c.toLowerCase().indexOf(p) !== -1; });
                     });
-                    return match || cols[0] || '';
+                    return match || '';
                 };
 
-                const nameCol = findCol(pCols, ['name', 'nom'], ['name', 'nom', 'desig']);
-                const priceCol = findCol(pCols, ['sell_price', 'prix_vente'], ['sell', 'vente', 'price', 'prix']); 
-                const inlineStockCol = findCol(pCols, ['stock', 'quantity', 'qte'], ['stock', 'quant']); 
-                const prodIdCol = findCol(pCols, ['id', 'product_id'], ['id']);
+                const nameCol = findCol(pCols, ['name', 'nom', 'designation', 'libelle'], ['name', 'nom', 'desig', 'lib']) || pCols[0];
+                const priceCol = findCol(pCols, ['sell_price', 'prix_vente', 'prix', 'price'], ['sell', 'vente', 'price', 'prix']) || pCols[0]; 
+                const inlineStockCol = findCol(pCols, ['stock', 'quantity', 'qte', 'quantite'], ['stock', 'quant', 'qte']) || pCols[0]; 
+                const prodIdCol = findCol(pCols, ['id', 'product_id', 'id_produit', 'code'], ['id', 'code']) || pCols[0];
 
-                // --- DÉTECTION DES CATÉGORIES ---
-                const catTable = tables.find(function(t) { return t.toLowerCase() === 'category' || t.toLowerCase() === 'categorie' || t.toLowerCase() === 'categories'; });
-                let catIdCol = '', catNameCol = '', prodCatCol = '';
+                // --- LE NOUVEAU CERVEAU POUR LES CATÉGORIES (Famille, Rayon, Groupe...) ---
+                const catTable = tables.find(function(t) { 
+                    const tl = t.toLowerCase();
+                    return tl === 'category' || tl === 'categorie' || tl === 'categories' || 
+                           tl === 'famille' || tl === 'familles' || tl === 'rayon' || 
+                           tl === 'rayons' || tl === 'groupe' || tl === 'groupes'; 
+                });
+
+                let catIdCol = '', catNameCol = '', prodCatCol = '', inlineCatCol = '';
+                
                 if (catTable) {
-                    prodCatCol = findCol(pCols, ['category_id', 'id_categorie', 'category'], ['cat']);
                     const cCols = sch[catTable] || [];
-                    catIdCol = findCol(cCols, ['id'], ['id']);
-                    catNameCol = findCol(cCols, ['name', 'nom'], ['name', 'nom', 'desig']);
+                    prodCatCol = findCol(pCols, ['category_id', 'id_categorie', 'id_famille', 'famille_id', 'id_rayon', 'rayon_id', 'groupe_id', 'id_groupe'], ['cat', 'fam', 'ray', 'grp']);
+                    catIdCol = findCol(cCols, ['id', 'code_famille', 'code_categorie', 'code'], ['id', 'code']);
+                    catNameCol = findCol(cCols, ['name', 'nom', 'libelle', 'designation'], ['name', 'nom', 'lib', 'desig']);
+                } else {
+                    // Si TourniPOS écrit directement "Famille" dans la table Produit (sans table séparée)
+                    inlineCatCol = findCol(pCols, ['famille', 'categorie', 'rayon', 'groupe'], ['famille', 'categorie', 'rayon', 'groupe']);
                 }
 
                 return { 
@@ -263,19 +273,22 @@
                     catTable: catTable || '',
                     prodCatCol: prodCatCol,
                     catIdCol: catIdCol,
-                    catNameCol: catNameCol
+                    catNameCol: catNameCol,
+                    inlineCatCol: inlineCatCol
                 };
             };
 
             const executeConfigQuery = function(db, cfg) {
                 if (!cfg || !cfg.prodTable) throw new Error("Configuration manquante.");
                 
-                // --- PRÉPARATION DE LA JOINTURE DES CATÉGORIES ---
                 let catSelect = "'Autres'"; 
                 let catJoin = "";
+                
                 if (cfg.catTable && cfg.prodCatCol && cfg.catIdCol && cfg.catNameCol) {
                     catSelect = 'IFNULL(c."' + cfg.catNameCol + '", \'Autres\')';
                     catJoin = ' LEFT JOIN "' + cfg.catTable + '" c ON p."' + cfg.prodCatCol + '" = c."' + cfg.catIdCol + '"';
+                } else if (cfg.inlineCatCol) {
+                    catSelect = 'IFNULL(p."' + cfg.inlineCatCol + '", \'Autres\')';
                 }
 
                 let q = "";
@@ -292,7 +305,7 @@
                             nom: row[0] || "Produit sans nom",
                             prix: (row[1] || 0) / 100,
                             quantite: Math.round((row[2] || 0) / 1000),
-                            categorie: row[3] || "Autres" // Nouvelle donnée !
+                            categorie: row[3] || "Autres"
                         };
                     });
                 }
@@ -300,7 +313,7 @@
             };
 
             const parseDatabase = async function(arrayBuffer) {
-                setLoadingMessage("Analyse des produits...");
+                setLoadingMessage("Analyse des produits et des familles...");
                 
                 try {
                     const SQL = await initSqlJsReady;
@@ -353,15 +366,14 @@
                 try {
                     const SQL = await initSqlJsReady;
                     const db = new SQL.Database();
-                    // --- NOUVELLE DÉMO AVEC CATÉGORIES ---
-                    db.run("CREATE TABLE Category (id INTEGER PRIMARY KEY, name TEXT);");
-                    db.run("INSERT INTO Category VALUES (1, 'Boissons');");
-                    db.run("INSERT INTO Category VALUES (2, 'Biscuits');");
+                    db.run("CREATE TABLE Famille (id INTEGER PRIMARY KEY, libelle TEXT);");
+                    db.run("INSERT INTO Famille VALUES (1, 'Boissons');");
+                    db.run("INSERT INTO Famille VALUES (2, 'Biscuits');");
                     
-                    db.run("CREATE TABLE Product (id INTEGER PRIMARY KEY, name TEXT, sell_price REAL, stock INTEGER, actif INTEGER, category_id INTEGER);");
-                    db.run("INSERT INTO Product VALUES (1, 'Jus d''orange', 140.00, 0, 1, 1);");
-                    db.run("INSERT INTO Product VALUES (2, 'Bimo Double Mix', 120.00, 21, 1, 2);");
-                    db.run("INSERT INTO Product VALUES (3, 'Bimo Gaufrette', 130.00, 50, 1, 2);");
+                    db.run("CREATE TABLE Article (id INTEGER PRIMARY KEY, designation TEXT, prix_vente REAL, stock INTEGER, id_famille INTEGER);");
+                    db.run("INSERT INTO Article VALUES (1, 'Jus d''orange', 14000.00, 0, 1);");
+                    db.run("INSERT INTO Article VALUES (2, 'Bimo Double Mix', 12000.00, 21000, 2);");
+                    db.run("INSERT INTO Article VALUES (3, 'Bimo Gaufrette', 13000.00, 50000, 2);");
                     const binaryArray = db.export();
                     db.close();
                     setDbInfo({ name: 'demo.db', date: new Date().toLocaleString('fr-FR') });
@@ -372,7 +384,6 @@
                 }
             };
 
-            // --- MISE À JOUR : LE FILTRE PREND EN COMPTE LA CATÉGORIE SÉLECTIONNÉE ---
             const filteredProducts = products.filter(function(p) {
                 const matchSearch = p.nom.toLowerCase().indexOf(searchQuery.toLowerCase()) !== -1;
                 const matchStock = hideEmptyStock ? p.quantite > 0 : true;
@@ -382,7 +393,6 @@
                 return matchSearch && matchStock && matchCategory;
             });
 
-            // --- NOUVELLE VERSION : FORMAT BON DE COMMANDE AVEC CATÉGORIES ---
             const generateText = function() {
                 const cart = "\uD83D\uDED2";
                 const pointDown = "\uD83D\uDC47";
@@ -395,7 +405,6 @@
                 text += "3. Indiquez la quantité voulue entre les crochets [ ]\n";
                 text += "------------------------\n";
 
-                // Groupement par catégorie
                 const grouped = {};
                 filteredProducts.forEach(function(p) {
                     const cat = p.categorie && p.categorie.trim() !== '' ? p.categorie : "Autres";
@@ -403,7 +412,6 @@
                     grouped[cat].push(p);
                 });
 
-                // Génération de l'affichage par bloc
                 Object.keys(grouped).sort().forEach(function(cat) {
                     text += "\n\uD83D\uDCCB *" + cat.toUpperCase() + "*\n";
                     grouped[cat].forEach(function(p) {
@@ -421,7 +429,6 @@
 
             const shareWhatsApp = function() {
                 const text = generateText();
-                // Utilisation de la véritable application mobile WhatsApp
                 const url = "https://api.whatsapp.com/send?text=" + encodeURIComponent(text);
                 window.open(url, '_blank');
             };
@@ -481,7 +488,6 @@
                                 />
                             </div>
 
-                            {/* --- MISE À JOUR : AJOUT DU MENU DÉROULANT DES CATÉGORIES --- */}
                             <div className="mt-3 flex justify-between items-center gap-2">
                                 <div className="relative flex-1 max-w-[60%]">
                                     <select
@@ -514,7 +520,6 @@
                                     <p className="text-gray-500 mb-4">Aucun produit trouvé.</p>
                                 </div>
                             ) : (
-                                // --- AFFICHAGE PAR CATÉGORIES SUR L'INTERFACE ---
                                 (function() {
                                     const grouped = {};
                                     filteredProducts.forEach(function(p) {
@@ -579,7 +584,6 @@
             return (
                 <div className="flex flex-col items-center justify-center min-h-screen p-6 bg-white">
                     
-                    {/* LOGO */}
                     <img 
                         src="./tournipos_catalog_logo.png" 
                         alt="TourniPos Catalog" 
