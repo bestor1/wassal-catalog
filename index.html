@@ -136,8 +136,8 @@
                 let res = {};
                 for (let k in DEFAULT_CONFIG) res[k] = DEFAULT_CONFIG[k];
                 try { 
-                    // PASSAGE EN V3 : Force le nettoyage de la mémoire pour relancer la détection
-                    const saved = localStorage.getItem('wassal_config_v3'); 
+                    // PASSAGE EN V4 : Force le nettoyage de la mémoire pour relancer la détection ULTRA-AGRESSIVE
+                    const saved = localStorage.getItem('wassal_config_v4'); 
                     if (saved) {
                         const parsed = JSON.parse(saved);
                         for (let k in parsed) res[k] = parsed[k];
@@ -147,7 +147,7 @@
             });
 
             const saveConfigToStorage = (cfg) => {
-                try { localStorage.setItem('wassal_config_v3', JSON.stringify(cfg)); } catch(e) {}
+                try { localStorage.setItem('wassal_config_v4', JSON.stringify(cfg)); } catch(e) {}
             };
 
             const initSqlJsReady = useMemo(function() {
@@ -219,46 +219,46 @@
                 const tables = Object.keys(sch);
                 if (tables.length === 0) return null;
                 
+                // Trouve la table des produits
                 const prodTable = tables.find(function(t) { 
                     const tl = t.toLowerCase();
-                    return tl === 'product' || tl === 'article' || tl === 'produit' || tl === 'produits'; 
+                    return tl.indexOf('prod') !== -1 || tl.indexOf('art') !== -1 || tl.indexOf('item') !== -1; 
                 }) || tables[0];
                 const pCols = sch[prodTable] || [];
 
-                const findCol = function(cols, exactList, partialList) {
+                // Fonction de recherche de mots-clés
+                const findCol = function(cols, partialList) {
                     if (!cols) return '';
-                    var match = cols.find(function(c) { return exactList.indexOf(c.toLowerCase()) !== -1; });
-                    if (match) return match;
-                    match = cols.find(function(c) {
+                    var match = cols.find(function(c) {
                         return partialList.some(function(p) { return c.toLowerCase().indexOf(p) !== -1; });
                     });
                     return match || '';
                 };
 
-                const nameCol = findCol(pCols, ['name', 'nom', 'designation', 'libelle'], ['name', 'nom', 'desig', 'lib']) || pCols[0];
-                const priceCol = findCol(pCols, ['sell_price', 'prix_vente', 'prix', 'price'], ['sell', 'vente', 'price', 'prix']) || pCols[0]; 
-                const inlineStockCol = findCol(pCols, ['stock', 'quantity', 'qte', 'quantite'], ['stock', 'quant', 'qte']) || pCols[0]; 
-                const prodIdCol = findCol(pCols, ['id', 'product_id', 'id_produit', 'code'], ['id', 'code']) || pCols[0];
+                const nameCol = findCol(pCols, ['name', 'nom', 'desig', 'lib']) || pCols[0];
+                const priceCol = findCol(pCols, ['sell', 'vente', 'price', 'prix']) || pCols[0]; 
+                const inlineStockCol = findCol(pCols, ['stock', 'quant', 'qte']) || pCols[0]; 
+                const prodIdCol = findCol(pCols, ['id', 'code', 'ref']) || pCols[0];
 
-                // --- LE NOUVEAU CERVEAU POUR LES CATÉGORIES (Famille, Rayon, Groupe...) ---
+                // --- LE NOUVEAU SCANNER ULTRA-AGRESSIF POUR LES CATÉGORIES ---
                 const catTable = tables.find(function(t) { 
                     const tl = t.toLowerCase();
-                    return tl === 'category' || tl === 'categorie' || tl === 'categories' || 
-                           tl === 'famille' || tl === 'familles' || tl === 'rayon' || 
-                           tl === 'rayons' || tl === 'groupe' || tl === 'groupes'; 
+                    return tl.indexOf('cat') !== -1 || tl.indexOf('fam') !== -1 || tl.indexOf('ray') !== -1 || 
+                           tl.indexOf('grp') !== -1 || tl.indexOf('marq') !== -1 || tl.indexOf('sect') !== -1 || 
+                           tl.indexOf('emp') !== -1 || tl.indexOf('dep') !== -1; 
                 });
 
                 let catIdCol = '', catNameCol = '', prodCatCol = '', inlineCatCol = '';
                 
                 if (catTable) {
                     const cCols = sch[catTable] || [];
-                    prodCatCol = findCol(pCols, ['category_id', 'id_categorie', 'id_famille', 'famille_id', 'id_rayon', 'rayon_id', 'groupe_id', 'id_groupe'], ['cat', 'fam', 'ray', 'grp']);
-                    catIdCol = findCol(cCols, ['id', 'code_famille', 'code_categorie', 'code'], ['id', 'code']);
-                    catNameCol = findCol(cCols, ['name', 'nom', 'libelle', 'designation'], ['name', 'nom', 'lib', 'desig']);
-                } else {
-                    // Si TourniPOS écrit directement "Famille" dans la table Produit (sans table séparée)
-                    inlineCatCol = findCol(pCols, ['famille', 'categorie', 'rayon', 'groupe'], ['famille', 'categorie', 'rayon', 'groupe']);
+                    prodCatCol = findCol(pCols, ['cat', 'fam', 'ray', 'grp', 'marq', 'sect', 'emp', 'dep']);
+                    catIdCol = findCol(cCols, ['id', 'code', 'ref']);
+                    catNameCol = findCol(cCols, ['name', 'nom', 'lib', 'desig']);
                 }
+
+                // Toujours chercher une colonne inline au cas où la table séparée n'existe pas
+                inlineCatCol = findCol(pCols, ['fam', 'cat', 'ray', 'grp', 'marq', 'sect', 'emp', 'dep']);
 
                 return { 
                     prodTable: prodTable, 
@@ -291,29 +291,41 @@
                     catSelect = 'IFNULL(p."' + cfg.inlineCatCol + '", \'Autres\')';
                 }
 
-                let q = "";
-                if (cfg.stockMode === 'inline') {
-                    q = 'SELECT p."' + cfg.nameCol + '", p."' + cfg.priceCol + '", IFNULL(p."' + cfg.inlineStockCol + '", 0), ' + catSelect + ' FROM "' + cfg.prodTable + '" p' + catJoin + ' LIMIT 3000';
-                } else {
-                    q = 'SELECT p."' + cfg.nameCol + '", p."' + cfg.priceCol + '", SUM(IFNULL(s."' + cfg.stockQtyCol + '", 0)), ' + catSelect + ' FROM "' + cfg.prodTable + '" p LEFT JOIN "' + cfg.stockTable + '" s ON p."' + cfg.prodIdCol + '" = s."' + cfg.stockProdIdCol + '"' + catJoin + ' GROUP BY p."' + cfg.prodIdCol + '" LIMIT 3000';
-                }
+                const q = 'SELECT p."' + cfg.nameCol + '", p."' + cfg.priceCol + '", IFNULL(p."' + cfg.inlineStockCol + '", 0), ' + catSelect + ' FROM "' + cfg.prodTable + '" p' + catJoin + ' LIMIT 3000';
 
-                const res = db.exec(q);
-                if (res.length > 0) {
-                    return res[0].values.map(function(row) {
-                        return {
-                            nom: row[0] || "Produit sans nom",
-                            prix: (row[1] || 0) / 100,
-                            quantite: Math.round((row[2] || 0) / 1000),
-                            categorie: row[3] || "Autres"
-                        };
-                    });
+                try {
+                    const res = db.exec(q);
+                    if (res.length > 0) {
+                        return res[0].values.map(function(row) {
+                            return {
+                                nom: row[0] || "Produit sans nom",
+                                prix: (row[1] || 0) / 100,
+                                quantite: Math.round((row[2] || 0) / 1000),
+                                categorie: row[3] || "Autres"
+                            };
+                        });
+                    }
+                } catch (e) {
+                    console.warn("Échec de la jointure des catégories, tentative de secours...", e);
+                    // Système de secours anti-crash si la détection s'est trompée
+                    const fallbackQ = 'SELECT p."' + cfg.nameCol + '", p."' + cfg.priceCol + '", IFNULL(p."' + cfg.inlineStockCol + '", 0), \'Autres\' FROM "' + cfg.prodTable + '" p LIMIT 3000';
+                    const fallbackRes = db.exec(fallbackQ);
+                    if (fallbackRes.length > 0) {
+                        return fallbackRes[0].values.map(function(row) {
+                            return {
+                                nom: row[0] || "Produit sans nom",
+                                prix: (row[1] || 0) / 100,
+                                quantite: Math.round((row[2] || 0) / 1000),
+                                categorie: "Autres"
+                            };
+                        });
+                    }
                 }
                 throw new Error("Aucun produit retourné par cette requête.");
             };
 
             const parseDatabase = async function(arrayBuffer) {
-                setLoadingMessage("Analyse des produits et des familles...");
+                setLoadingMessage("Analyse des produits et des rayons...");
                 
                 try {
                     const SQL = await initSqlJsReady;
