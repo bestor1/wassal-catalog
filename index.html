@@ -94,6 +94,23 @@
             const [dbInfo, setDbInfo] = useState({ date: null, name: '' });
             const [hideEmptyStock, setHideEmptyStock] = useState(false);
             
+            // --- NOUVEAU : ÉTAT POUR LE FILTRE DE CATÉGORIE ---
+            const [selectedCategory, setSelectedCategory] = useState('Toutes');
+
+            // --- NOUVEAU : LISTER TOUTES LES CATÉGORIES UNIQUES ---
+            const allCategories = useMemo(function() {
+                const cats = { "Toutes": true };
+                products.forEach(function(p) {
+                    const c = p.categorie && p.categorie.trim() !== '' ? p.categorie : "Autres";
+                    cats[c] = true;
+                });
+                return Object.keys(cats).sort(function(a, b) {
+                    if (a === 'Toutes') return -1; // "Toutes" reste toujours en premier
+                    if (b === 'Toutes') return 1;
+                    return a.localeCompare(b);
+                });
+            }, [products]);
+            
             // --- ÉTATS POUR L'INSTALLATION (PWA) ---
             const [deferredPrompt, setDeferredPrompt] = useState(null);
             const [isInstallable, setIsInstallable] = useState(false);
@@ -342,9 +359,9 @@
                     db.run("INSERT INTO Category VALUES (2, 'Biscuits');");
                     
                     db.run("CREATE TABLE Product (id INTEGER PRIMARY KEY, name TEXT, sell_price REAL, stock INTEGER, actif INTEGER, category_id INTEGER);");
-                    db.run("INSERT INTO Product VALUES (1, 'Jus d''orange', 14000.00, 0, 1, 1);");
-                    db.run("INSERT INTO Product VALUES (2, 'Bimo Double Mix', 12000.00, 21000, 1, 2);");
-                    db.run("INSERT INTO Product VALUES (3, 'Bimo Gaufrette', 13000.00, 50000, 1, 2);");
+                    db.run("INSERT INTO Product VALUES (1, 'Jus d''orange', 140.00, 0, 1, 1);");
+                    db.run("INSERT INTO Product VALUES (2, 'Bimo Double Mix', 120.00, 21, 1, 2);");
+                    db.run("INSERT INTO Product VALUES (3, 'Bimo Gaufrette', 130.00, 50, 1, 2);");
                     const binaryArray = db.export();
                     db.close();
                     setDbInfo({ name: 'demo.db', date: new Date().toLocaleString('fr-FR') });
@@ -355,10 +372,14 @@
                 }
             };
 
+            // --- MISE À JOUR : LE FILTRE PREND EN COMPTE LA CATÉGORIE SÉLECTIONNÉE ---
             const filteredProducts = products.filter(function(p) {
                 const matchSearch = p.nom.toLowerCase().indexOf(searchQuery.toLowerCase()) !== -1;
                 const matchStock = hideEmptyStock ? p.quantite > 0 : true;
-                return matchSearch && matchStock;
+                const cat = p.categorie && p.categorie.trim() !== '' ? p.categorie : "Autres";
+                const matchCategory = selectedCategory === 'Toutes' || cat === selectedCategory;
+                
+                return matchSearch && matchStock && matchCategory;
             });
 
             // --- NOUVELLE VERSION : FORMAT BON DE COMMANDE AVEC CATÉGORIES ---
@@ -460,15 +481,29 @@
                                 />
                             </div>
 
-                            <div className="mt-3 flex justify-end">
-                                <label className="flex items-center space-x-2 text-sm text-blue-100 hover:text-white cursor-pointer transition-colors">
+                            {/* --- MISE À JOUR : AJOUT DU MENU DÉROULANT DES CATÉGORIES --- */}
+                            <div className="mt-3 flex justify-between items-center gap-2">
+                                <div className="relative flex-1 max-w-[60%]">
+                                    <select
+                                        className="w-full pl-3 pr-8 py-1.5 rounded-lg bg-blue-700 text-white text-sm border border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-300 appearance-none shadow-sm"
+                                        value={selectedCategory}
+                                        onChange={function(e) { setSelectedCategory(e.target.value); }}
+                                    >
+                                        {allCategories.map(function(c) {
+                                            return <option key={c} value={c}>{c === 'Toutes' ? 'Toutes les catégories' : c}</option>;
+                                        })}
+                                    </select>
+                                    <i className="fa-solid fa-chevron-down absolute right-3 top-2.5 text-blue-200 pointer-events-none text-xs"></i>
+                                </div>
+
+                                <label className="flex items-center space-x-2 text-sm text-blue-100 hover:text-white cursor-pointer transition-colors flex-shrink-0">
                                     <input 
                                         type="checkbox" 
                                         className="rounded border-none w-4 h-4 cursor-pointer accent-blue-400"
                                         checked={hideEmptyStock}
                                         onChange={function(e) { setHideEmptyStock(e.target.checked); }}
                                     />
-                                    <span><i className="fa-solid fa-filter mr-1"></i> En stock uniquement</span>
+                                    <span><i className="fa-solid fa-filter mr-1"></i> En stock</span>
                                 </label>
                             </div>
                         </div>
