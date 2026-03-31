@@ -7,7 +7,7 @@
     
     <!-- PWA / Fichiers d'installation -->
     <link rel="manifest" href="manifest.json">
-    <meta name="theme-color" content="#2563eb">
+    <meta name="theme-color" content="#4b13a3">
     
     <!-- Icônes du navigateur et d'application -->
     <link rel="icon" type="image/png" href="./tournipos_catalog_logo.png">
@@ -42,14 +42,14 @@
     <!-- FontAwesome Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
-    <!-- React 18 (Mise à jour pour corriger l'erreur createRoot) -->
+    <!-- React 18 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
     
-    <!-- Babel 6 (LA seule version qui empêche l'erreur 'Unexpected token ?' sur Windows 7) -->
+    <!-- Babel 6 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/6.26.0/babel.min.js"></script>
     
-    <!-- SQL.js (Version ASM.js 100% compatible avec les anciens navigateurs sans WebAssembly) -->
+    <!-- SQL.js -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-asm.js"></script>
     
     <!-- Google Identity Services -->
@@ -130,15 +130,6 @@
                 } catch(e) {}
                 return res;
             });
-
-            const updateConfig = (newValues) => {
-                setConfig(prev => {
-                    let updated = {};
-                    for (let k in prev) updated[k] = prev[k];
-                    for (let k in newValues) updated[k] = newValues[k];
-                    return updated;
-                });
-            };
 
             const saveConfigToStorage = (cfg) => {
                 try { localStorage.setItem('wassal_config_v2', JSON.stringify(cfg)); } catch(e) {}
@@ -340,21 +331,30 @@
                 return matchSearch && matchStock;
             });
 
+            // --- NOUVELLE VERSION : FORMAT BON DE COMMANDE ---
             const generateText = function() {
                 const cart = "\uD83D\uDED2";
-                const check = "\u2705";
-                const cross = "\u274C";
-                const dot = "\u25AA\uFE0F";
-                const money = "\uD83D\uDCB0";
-                const box = "\uD83D\uDCE6";
+                const pointDown = "\uD83D\uDC47";
 
-                let text = cart + " *CATALOGUE DISPONIBLE*\n\n";
+                let text = cart + " *BON DE COMMANDE*\n";
+                text += "------------------------\n";
+                text += pointDown + " *Instructions :*\n";
+                text += "1. Copiez ce message\n";
+                text += "2. Collez-le dans la zone de texte\n";
+                text += "3. Indiquez la quantité voulue entre les crochets [ ]\n";
+                text += "------------------------\n\n";
+
                 filteredProducts.forEach(function(p) {
-                    const status = p.quantite > 0 ? check : cross + " Rupture";
-                    text += dot + " *" + p.nom + "*\n";
-                    text += money + " Prix : " + p.prix + " DZD | " + box + " Stock : " + status + "\n\n";
+                    if (p.quantite > 0) {
+                        // Produit disponible : on laisse des crochets vides pour la quantité
+                        text += "[   ] *" + p.nom + "* - " + p.prix + " DZD\n";
+                    } else {
+                        // Produit en rupture : on bloque la saisie avec une croix
+                        text += "[ \u274C Rupture ] *" + p.nom + "* - " + p.prix + " DZD\n";
+                    }
                 });
-                text += "_Généré via TourniPos Catalog_";
+
+                text += "\n_Généré via TourniPos Catalog_";
                 return text;
             };
 
@@ -483,7 +483,7 @@
             return (
                 <div className="flex flex-col items-center justify-center min-h-screen p-6 bg-white">
                     
-                    {/* LE NOUVEAU LOGO EST ICI */}
+                    {/* LOGO */}
                     <img 
                         src="./tournipos_catalog_logo.png" 
                         alt="TourniPos Catalog" 
