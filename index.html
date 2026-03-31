@@ -13,9 +13,9 @@
     <link rel="icon" type="image/png" href="./tournipos_catalog_logo.png">
     <link rel="apple-touch-icon" href="./tournipos_catalog_logo.png">
     
-    <!-- Polyfills absolus pour réparer les anciens navigateurs (Windows 7 / IE11) -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-polyfill/6.26.0/polyfill.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/whatwg-fetch/3.6.19/fetch.min.js"></script>
+    <!-- Polyfills absolus pour réparer les anciens navigateurs -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-polyfill/6.26.0/polyfill.min.js" crossorigin="anonymous"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/whatwg-fetch/3.6.19/fetch.min.js" crossorigin="anonymous"></script>
 
     <!-- Filet de sécurité Anti-Crash -->
     <script>
@@ -43,17 +43,17 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
     <!-- React 18 -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js" crossorigin="anonymous"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js" crossorigin="anonymous"></script>
     
     <!-- Babel 6 -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/6.26.0/babel.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/6.26.0/babel.min.js" crossorigin="anonymous"></script>
     
     <!-- SQL.js -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-asm.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-asm.js" crossorigin="anonymous"></script>
     
     <!-- Google Identity Services -->
-    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <script src="https://accounts.google.com/gsi/client" async defer crossorigin="anonymous"></script>
 
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #f3f4f6; }
@@ -136,7 +136,7 @@
                 let res = {};
                 for (let k in DEFAULT_CONFIG) res[k] = DEFAULT_CONFIG[k];
                 try { 
-                    // PASSAGE EN V4 : Force le nettoyage de la mémoire pour relancer la détection ULTRA-AGRESSIVE
+                    // PASSAGE EN V4 : Nettoyage forcé de la mémoire
                     const saved = localStorage.getItem('wassal_config_v4'); 
                     if (saved) {
                         const parsed = JSON.parse(saved);
@@ -245,20 +245,20 @@
                     const tl = t.toLowerCase();
                     return tl.indexOf('cat') !== -1 || tl.indexOf('fam') !== -1 || tl.indexOf('ray') !== -1 || 
                            tl.indexOf('grp') !== -1 || tl.indexOf('marq') !== -1 || tl.indexOf('sect') !== -1 || 
-                           tl.indexOf('emp') !== -1 || tl.indexOf('dep') !== -1; 
+                           tl.indexOf('emp') !== -1 || tl.indexOf('dep') !== -1 || tl.indexOf('typ') !== -1; 
                 });
 
                 let catIdCol = '', catNameCol = '', prodCatCol = '', inlineCatCol = '';
                 
                 if (catTable) {
                     const cCols = sch[catTable] || [];
-                    prodCatCol = findCol(pCols, ['cat', 'fam', 'ray', 'grp', 'marq', 'sect', 'emp', 'dep']);
+                    prodCatCol = findCol(pCols, ['cat', 'fam', 'ray', 'grp', 'marq', 'sect', 'emp', 'dep', 'typ']);
                     catIdCol = findCol(cCols, ['id', 'code', 'ref']);
                     catNameCol = findCol(cCols, ['name', 'nom', 'lib', 'desig']);
                 }
 
                 // Toujours chercher une colonne inline au cas où la table séparée n'existe pas
-                inlineCatCol = findCol(pCols, ['fam', 'cat', 'ray', 'grp', 'marq', 'sect', 'emp', 'dep']);
+                inlineCatCol = findCol(pCols, ['fam', 'cat', 'ray', 'grp', 'marq', 'sect', 'emp', 'dep', 'typ']);
 
                 return { 
                     prodTable: prodTable, 
