@@ -14,8 +14,8 @@
     <link rel="apple-touch-icon" href="./tournipos_catalog_logo.png">
     
     <!-- Polyfills absolus pour réparer les anciens navigateurs -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-polyfill/6.26.0/polyfill.min.js" crossorigin="anonymous"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/whatwg-fetch/3.6.19/fetch.min.js" crossorigin="anonymous"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-polyfill/6.26.0/polyfill.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/whatwg-fetch/3.6.19/fetch.min.js"></script>
 
     <!-- Filet de sécurité Anti-Crash -->
     <script>
@@ -43,17 +43,17 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
     <!-- React 18 -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js" crossorigin="anonymous"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js" crossorigin="anonymous"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
     
     <!-- Babel 6 -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/6.26.0/babel.min.js" crossorigin="anonymous"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/6.26.0/babel.min.js"></script>
     
     <!-- SQL.js -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-asm.js" crossorigin="anonymous"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-asm.js"></script>
     
     <!-- Google Identity Services -->
-    <script src="https://accounts.google.com/gsi/client" async defer crossorigin="anonymous"></script>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
 
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #f3f4f6; }
@@ -136,8 +136,8 @@
                 let res = {};
                 for (let k in DEFAULT_CONFIG) res[k] = DEFAULT_CONFIG[k];
                 try { 
-                    // PASSAGE EN V4 : Nettoyage forcé de la mémoire
-                    const saved = localStorage.getItem('wassal_config_v4'); 
+                    // V5 : Nettoyage pour forcer la relecture de la base
+                    const saved = localStorage.getItem('wassal_config_v5'); 
                     if (saved) {
                         const parsed = JSON.parse(saved);
                         for (let k in parsed) res[k] = parsed[k];
@@ -147,7 +147,7 @@
             });
 
             const saveConfigToStorage = (cfg) => {
-                try { localStorage.setItem('wassal_config_v4', JSON.stringify(cfg)); } catch(e) {}
+                try { localStorage.setItem('wassal_config_v5', JSON.stringify(cfg)); } catch(e) {}
             };
 
             const initSqlJsReady = useMemo(function() {
@@ -219,28 +219,28 @@
                 const tables = Object.keys(sch);
                 if (tables.length === 0) return null;
                 
-                // Trouve la table des produits
                 const prodTable = tables.find(function(t) { 
                     const tl = t.toLowerCase();
                     return tl.indexOf('prod') !== -1 || tl.indexOf('art') !== -1 || tl.indexOf('item') !== -1; 
                 }) || tables[0];
                 const pCols = sch[prodTable] || [];
 
-                // Fonction de recherche de mots-clés
-                const findCol = function(cols, partialList) {
+                const findCol = function(cols, exactList, partialList) {
                     if (!cols) return '';
-                    var match = cols.find(function(c) {
+                    var match = cols.find(function(c) { return exactList.indexOf(c.toLowerCase()) !== -1; });
+                    if (match) return match;
+                    match = cols.find(function(c) {
                         return partialList.some(function(p) { return c.toLowerCase().indexOf(p) !== -1; });
                     });
                     return match || '';
                 };
 
-                const nameCol = findCol(pCols, ['name', 'nom', 'desig', 'lib']) || pCols[0];
-                const priceCol = findCol(pCols, ['sell', 'vente', 'price', 'prix']) || pCols[0]; 
-                const inlineStockCol = findCol(pCols, ['stock', 'quant', 'qte']) || pCols[0]; 
-                const prodIdCol = findCol(pCols, ['id', 'code', 'ref']) || pCols[0];
+                const nameCol = findCol(pCols, ['name', 'nom', 'designation', 'libelle'], ['name', 'nom', 'desig', 'lib']) || pCols[0];
+                const priceCol = findCol(pCols, ['sell_price', 'prix_vente', 'prix', 'price'], ['sell', 'vente', 'price', 'prix']) || pCols[0]; 
+                const inlineStockCol = findCol(pCols, ['stock', 'quantity', 'qte', 'quantite'], ['stock', 'quant', 'qte']) || pCols[0]; 
+                const prodIdCol = findCol(pCols, ['id', 'product_id', 'id_produit', 'code', 'ref'], ['id', 'code', 'ref']) || pCols[0];
 
-                // --- LE NOUVEAU SCANNER ULTRA-AGRESSIF POUR LES CATÉGORIES ---
+                // Scanner de catégories
                 const catTable = tables.find(function(t) { 
                     const tl = t.toLowerCase();
                     return tl.indexOf('cat') !== -1 || tl.indexOf('fam') !== -1 || tl.indexOf('ray') !== -1 || 
@@ -252,13 +252,12 @@
                 
                 if (catTable) {
                     const cCols = sch[catTable] || [];
-                    prodCatCol = findCol(pCols, ['cat', 'fam', 'ray', 'grp', 'marq', 'sect', 'emp', 'dep', 'typ']);
-                    catIdCol = findCol(cCols, ['id', 'code', 'ref']);
-                    catNameCol = findCol(cCols, ['name', 'nom', 'lib', 'desig']);
+                    prodCatCol = findCol(pCols, ['category_id', 'id_categorie', 'id_famille', 'famille_id'], ['cat', 'fam', 'ray', 'grp', 'marq', 'sect', 'emp', 'dep', 'typ']);
+                    catIdCol = findCol(cCols, ['id', 'code', 'ref'], ['id', 'code', 'ref']);
+                    catNameCol = findCol(cCols, ['name', 'nom', 'libelle', 'designation'], ['name', 'nom', 'lib', 'desig']);
                 }
 
-                // Toujours chercher une colonne inline au cas où la table séparée n'existe pas
-                inlineCatCol = findCol(pCols, ['fam', 'cat', 'ray', 'grp', 'marq', 'sect', 'emp', 'dep', 'typ']);
+                inlineCatCol = findCol(pCols, ['famille', 'categorie', 'rayon', 'groupe', 'marque'], ['fam', 'cat', 'ray', 'grp', 'marq', 'sect', 'emp', 'dep', 'typ']);
 
                 return { 
                     prodTable: prodTable, 
@@ -307,7 +306,6 @@
                     }
                 } catch (e) {
                     console.warn("Échec de la jointure des catégories, tentative de secours...", e);
-                    // Système de secours anti-crash si la détection s'est trompée
                     const fallbackQ = 'SELECT p."' + cfg.nameCol + '", p."' + cfg.priceCol + '", IFNULL(p."' + cfg.inlineStockCol + '", 0), \'Autres\' FROM "' + cfg.prodTable + '" p LIMIT 3000';
                     const fallbackRes = db.exec(fallbackQ);
                     if (fallbackRes.length > 0) {
