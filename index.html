@@ -81,7 +81,8 @@
 
         const DEFAULT_CONFIG = {
             prodTable: '', nameCol: '', priceCol: '', stockMode: 'inline',
-            inlineStockCol: '', stockTable: '', stockQtyCol: '', stockProdIdCol: '', prodIdCol: ''
+            inlineStockCol: '', stockTable: '', stockQtyCol: '', stockProdIdCol: '', prodIdCol: '',
+            catTable: '', prodCatCol: '', catIdCol: '', catNameCol: ''
         };
 
         function App() {
@@ -222,6 +223,16 @@
                 const inlineStockCol = findCol(pCols, ['stock', 'quantity', 'qte'], ['stock', 'quant']); 
                 const prodIdCol = findCol(pCols, ['id', 'product_id'], ['id']);
 
+                // --- DÉTECTION DES CATÉGORIES ---
+                const catTable = tables.find(function(t) { return t.toLowerCase() === 'category' || t.toLowerCase() === 'categorie' || t.toLowerCase() === 'categories'; });
+                let catIdCol = '', catNameCol = '', prodCatCol = '';
+                if (catTable) {
+                    prodCatCol = findCol(pCols, ['category_id', 'id_categorie', 'category'], ['cat']);
+                    const cCols = sch[catTable] || [];
+                    catIdCol = findCol(cCols, ['id'], ['id']);
+                    catNameCol = findCol(cCols, ['name', 'nom'], ['name', 'nom', 'desig']);
+                }
+
                 return { 
                     prodTable: prodTable, 
                     nameCol: nameCol, 
@@ -231,26 +242,40 @@
                     stockTable: '', 
                     stockQtyCol: '', 
                     stockProdIdCol: '', 
-                    prodIdCol: prodIdCol 
+                    prodIdCol: prodIdCol,
+                    catTable: catTable || '',
+                    prodCatCol: prodCatCol,
+                    catIdCol: catIdCol,
+                    catNameCol: catNameCol
                 };
             };
 
             const executeConfigQuery = function(db, cfg) {
                 if (!cfg || !cfg.prodTable) throw new Error("Configuration manquante.");
                 
+                // --- PRÉPARATION DE LA JOINTURE DES CATÉGORIES ---
+                let catSelect = "'Autres'"; 
+                let catJoin = "";
+                if (cfg.catTable && cfg.prodCatCol && cfg.catIdCol && cfg.catNameCol) {
+                    catSelect = 'IFNULL(c."' + cfg.catNameCol + '", \'Autres\')';
+                    catJoin = ' LEFT JOIN "' + cfg.catTable + '" c ON p."' + cfg.prodCatCol + '" = c."' + cfg.catIdCol + '"';
+                }
+
                 let q = "";
                 if (cfg.stockMode === 'inline') {
-                    q = 'SELECT "' + cfg.nameCol + '", "' + cfg.priceCol + '", IFNULL("' + cfg.inlineStockCol + '", 0) FROM "' + cfg.prodTable + '" LIMIT 3000';
+                    q = 'SELECT p."' + cfg.nameCol + '", p."' + cfg.priceCol + '", IFNULL(p."' + cfg.inlineStockCol + '", 0), ' + catSelect + ' FROM "' + cfg.prodTable + '" p' + catJoin + ' LIMIT 3000';
                 } else {
-                    q = 'SELECT p."' + cfg.nameCol + '", p."' + cfg.priceCol + '", SUM(IFNULL(s."' + cfg.stockQtyCol + '", 0)) FROM "' + cfg.prodTable + '" p LEFT JOIN "' + cfg.stockTable + '" s ON p."' + cfg.prodIdCol + '" = s."' + cfg.stockProdIdCol + '" GROUP BY p."' + cfg.prodIdCol + '" LIMIT 3000';
+                    q = 'SELECT p."' + cfg.nameCol + '", p."' + cfg.priceCol + '", SUM(IFNULL(s."' + cfg.stockQtyCol + '", 0)), ' + catSelect + ' FROM "' + cfg.prodTable + '" p LEFT JOIN "' + cfg.stockTable + '" s ON p."' + cfg.prodIdCol + '" = s."' + cfg.stockProdIdCol + '"' + catJoin + ' GROUP BY p."' + cfg.prodIdCol + '" LIMIT 3000';
                 }
+
                 const res = db.exec(q);
                 if (res.length > 0) {
                     return res[0].values.map(function(row) {
                         return {
                             nom: row[0] || "Produit sans nom",
                             prix: (row[1] || 0) / 100,
-                            quantite: Math.round((row[2] || 0) / 1000)
+                            quantite: Math.round((row[2] || 0) / 1000),
+                            categorie: row[3] || "Autres" // Nouvelle donnée !
                         };
                     });
                 }
@@ -311,10 +336,15 @@
                 try {
                     const SQL = await initSqlJsReady;
                     const db = new SQL.Database();
-                    db.run("CREATE TABLE Product (id INTEGER PRIMARY KEY, name TEXT, sell_price REAL, stock INTEGER, actif INTEGER);");
-                    db.run("INSERT INTO Product VALUES (1, 'Jus d''orange', 14000.00, 0, 1);");
-                    db.run("INSERT INTO Product VALUES (2, 'Bimo Double Mix', 12000.00, 21000, 1);");
-                    db.run("INSERT INTO Product VALUES (3, 'Bimo Gaufrette', 13000.00, 50000, 1);");
+                    // --- NOUVELLE DÉMO AVEC CATÉGORIES ---
+                    db.run("CREATE TABLE Category (id INTEGER PRIMARY KEY, name TEXT);");
+                    db.run("INSERT INTO Category VALUES (1, 'Boissons');");
+                    db.run("INSERT INTO Category VALUES (2, 'Biscuits');");
+                    
+                    db.run("CREATE TABLE Product (id INTEGER PRIMARY KEY, name TEXT, sell_price REAL, stock INTEGER, actif INTEGER, category_id INTEGER);");
+                    db.run("INSERT INTO Product VALUES (1, 'Jus d''orange', 14000.00, 0, 1, 1);");
+                    db.run("INSERT INTO Product VALUES (2, 'Bimo Double Mix', 12000.00, 21000, 1, 2);");
+                    db.run("INSERT INTO Product VALUES (3, 'Bimo Gaufrette', 13000.00, 50000, 1, 2);");
                     const binaryArray = db.export();
                     db.close();
                     setDbInfo({ name: 'demo.db', date: new Date().toLocaleString('fr-FR') });
@@ -331,7 +361,7 @@
                 return matchSearch && matchStock;
             });
 
-            // --- NOUVELLE VERSION : FORMAT BON DE COMMANDE ---
+            // --- NOUVELLE VERSION : FORMAT BON DE COMMANDE AVEC CATÉGORIES ---
             const generateText = function() {
                 const cart = "\uD83D\uDED2";
                 const pointDown = "\uD83D\uDC47";
@@ -342,16 +372,26 @@
                 text += "1. Copiez ce message\n";
                 text += "2. Collez-le dans la zone de texte\n";
                 text += "3. Indiquez la quantité voulue entre les crochets [ ]\n";
-                text += "------------------------\n\n";
+                text += "------------------------\n";
 
+                // Groupement par catégorie
+                const grouped = {};
                 filteredProducts.forEach(function(p) {
-                    if (p.quantite > 0) {
-                        // Produit disponible : on laisse des crochets vides pour la quantité
-                        text += "[   ] *" + p.nom + "* - " + p.prix + " DZD\n";
-                    } else {
-                        // Produit en rupture : on bloque la saisie avec une croix
-                        text += "[ \u274C Rupture ] *" + p.nom + "* - " + p.prix + " DZD\n";
-                    }
+                    const cat = p.categorie && p.categorie.trim() !== '' ? p.categorie : "Autres";
+                    if (!grouped[cat]) grouped[cat] = [];
+                    grouped[cat].push(p);
+                });
+
+                // Génération de l'affichage par bloc
+                Object.keys(grouped).sort().forEach(function(cat) {
+                    text += "\n\uD83D\uDCCB *" + cat.toUpperCase() + "*\n";
+                    grouped[cat].forEach(function(p) {
+                        if (p.quantite > 0) {
+                            text += "[   ] *" + p.nom + "* - " + p.prix + " DZD\n";
+                        } else {
+                            text += "[ \u274C Rupture ] *" + p.nom + "* - " + p.prix + " DZD\n";
+                        }
+                    });
                 });
 
                 text += "\n_Généré via TourniPos Catalog_";
@@ -433,30 +473,51 @@
                             </div>
                         </div>
 
-                        <div className="flex-1 overflow-y-auto p-4 space-y-3 pb-24">
+                        <div className="flex-1 overflow-y-auto p-4 space-y-4 pb-24">
                             {filteredProducts.length === 0 ? (
                                 <div className="text-center mt-10">
                                     <p className="text-gray-500 mb-4">Aucun produit trouvé.</p>
                                 </div>
                             ) : (
-                                filteredProducts.map(function(p, index) {
-                                    return (
-                                        <div key={index} className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex justify-between items-center">
-                                            <div>
-                                                <h2 className="font-bold text-gray-800 text-lg">{p.nom}</h2>
-                                                <p className="text-sm text-gray-500 mt-1">
-                                                    Stock: <span className={p.quantite > 0 ? "text-green-600 font-bold" : "text-red-500 font-bold"}>
-                                                        {p.quantite > 0 ? p.quantite + " dispo." : "Rupture"}
-                                                    </span>
-                                                </p>
+                                // --- AFFICHAGE PAR CATÉGORIES SUR L'INTERFACE ---
+                                (function() {
+                                    const grouped = {};
+                                    filteredProducts.forEach(function(p) {
+                                        const cat = p.categorie && p.categorie.trim() !== '' ? p.categorie : "Autres";
+                                        if (!grouped[cat]) grouped[cat] = [];
+                                        grouped[cat].push(p);
+                                    });
+
+                                    return Object.keys(grouped).sort().map(function(cat) {
+                                        return (
+                                            <div key={cat} className="mb-6">
+                                                <h2 className="text-lg font-extrabold text-blue-900 mb-3 ml-1 border-b-2 border-blue-200 pb-1 flex items-center">
+                                                    <i className="fa-solid fa-folder-open text-blue-500 mr-2"></i> {cat}
+                                                </h2>
+                                                <div className="space-y-3">
+                                                    {grouped[cat].map(function(p, index) {
+                                                        return (
+                                                            <div key={index} className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex justify-between items-center">
+                                                                <div>
+                                                                    <h2 className="font-bold text-gray-800 text-lg">{p.nom}</h2>
+                                                                    <p className="text-sm text-gray-500 mt-1">
+                                                                        Stock: <span className={p.quantite > 0 ? "text-green-600 font-bold" : "text-red-500 font-bold"}>
+                                                                            {p.quantite > 0 ? p.quantite + " dispo." : "Rupture"}
+                                                                        </span>
+                                                                    </p>
+                                                                </div>
+                                                                <div className="text-right">
+                                                                    <span className="font-extrabold text-blue-600">{p.prix}</span>
+                                                                    <span className="text-xs text-gray-500 ml-1">DZD</span>
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
                                             </div>
-                                            <div className="text-right">
-                                                <span className="font-extrabold text-blue-600">{p.prix}</span>
-                                                <span className="text-xs text-gray-500 ml-1">DZD</span>
-                                            </div>
-                                        </div>
-                                    );
-                                })
+                                        );
+                                    });
+                                })()
                             )}
                         </div>
 
