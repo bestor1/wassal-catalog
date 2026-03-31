@@ -5,19 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>TourniPos Catalog - Partage de stock</title>
     
-    <!-- PWA / Fichiers d'installation -->
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#4b13a3">
     
-    <!-- Icônes du navigateur et d'application -->
     <link rel="icon" type="image/png" href="./tournipos_catalog_logo.png">
     <link rel="apple-touch-icon" href="./tournipos_catalog_logo.png">
     
-    <!-- Polyfills absolus pour réparer les anciens navigateurs -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-polyfill/6.26.0/polyfill.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/whatwg-fetch/3.6.19/fetch.min.js"></script>
 
-    <!-- Filet de sécurité Anti-Crash -->
     <script>
         window.onerror = function(msg, url, lineNo, columnNo, error) {
             var el = document.getElementById('root');
@@ -36,23 +32,13 @@
         };
     </script>
 
-    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    
-    <!-- FontAwesome Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
-    <!-- React 18 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
-    
-    <!-- Babel 6 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/6.26.0/babel.min.js"></script>
-    
-    <!-- SQL.js -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-asm.js"></script>
-    
-    <!-- Google Identity Services -->
     <script src="https://accounts.google.com/gsi/client" async defer></script>
 
     <style>
@@ -69,7 +55,6 @@
         </div>
     </div>
 
-    <!-- Traduction du code avec Babel 6 -->
     <script type="text/babel" data-presets="es2015,react,stage-2">
         if (typeof React === 'undefined' || typeof ReactDOM === 'undefined') {
             console.error("React n'a pas pu être chargé. Vérifiez votre connexion internet ou vos extensions bloquantes.");
@@ -136,8 +121,8 @@
                 let res = {};
                 for (let k in DEFAULT_CONFIG) res[k] = DEFAULT_CONFIG[k];
                 try { 
-                    // V5 : Nettoyage pour forcer la relecture de la base
-                    const saved = localStorage.getItem('wassal_config_v5'); 
+                    // V6 : NOUVEAU NETTOYAGE POUR LE CODE "LABEL"
+                    const saved = localStorage.getItem('wassal_config_v6'); 
                     if (saved) {
                         const parsed = JSON.parse(saved);
                         for (let k in parsed) res[k] = parsed[k];
@@ -147,7 +132,7 @@
             });
 
             const saveConfigToStorage = (cfg) => {
-                try { localStorage.setItem('wassal_config_v5', JSON.stringify(cfg)); } catch(e) {}
+                try { localStorage.setItem('wassal_config_v6', JSON.stringify(cfg)); } catch(e) {}
             };
 
             const initSqlJsReady = useMemo(function() {
@@ -235,12 +220,11 @@
                     return match || '';
                 };
 
-                const nameCol = findCol(pCols, ['name', 'nom', 'designation', 'libelle'], ['name', 'nom', 'desig', 'lib']) || pCols[0];
+                const nameCol = findCol(pCols, ['name', 'nom', 'designation', 'libelle', 'label'], ['name', 'nom', 'desig', 'lib', 'label']) || pCols[0];
                 const priceCol = findCol(pCols, ['sell_price', 'prix_vente', 'prix', 'price'], ['sell', 'vente', 'price', 'prix']) || pCols[0]; 
                 const inlineStockCol = findCol(pCols, ['stock', 'quantity', 'qte', 'quantite'], ['stock', 'quant', 'qte']) || pCols[0]; 
                 const prodIdCol = findCol(pCols, ['id', 'product_id', 'id_produit', 'code', 'ref'], ['id', 'code', 'ref']) || pCols[0];
 
-                // Scanner de catégories
                 const catTable = tables.find(function(t) { 
                     const tl = t.toLowerCase();
                     return tl.indexOf('cat') !== -1 || tl.indexOf('fam') !== -1 || tl.indexOf('ray') !== -1 || 
@@ -254,7 +238,9 @@
                     const cCols = sch[catTable] || [];
                     prodCatCol = findCol(pCols, ['category_id', 'id_categorie', 'id_famille', 'famille_id'], ['cat', 'fam', 'ray', 'grp', 'marq', 'sect', 'emp', 'dep', 'typ']);
                     catIdCol = findCol(cCols, ['id', 'code', 'ref'], ['id', 'code', 'ref']);
-                    catNameCol = findCol(cCols, ['name', 'nom', 'libelle', 'designation'], ['name', 'nom', 'lib', 'desig']);
+                    
+                    // L'AJOUT CRUCIAL EST ICI : On cherche la colonne 'label' vue sur votre capture
+                    catNameCol = findCol(cCols, ['label', 'name', 'nom', 'libelle', 'designation'], ['label', 'name', 'nom', 'lib', 'desig']);
                 }
 
                 inlineCatCol = findCol(pCols, ['famille', 'categorie', 'rayon', 'groupe', 'marque'], ['fam', 'cat', 'ray', 'grp', 'marq', 'sect', 'emp', 'dep', 'typ']);
@@ -665,7 +651,6 @@
         }
     </script>
 
-    <!-- Déclencheur du Pop-up d'installation automatique et Service Worker -->
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', function() {
